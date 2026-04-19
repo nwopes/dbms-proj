@@ -1,0 +1,121 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * { box-sizing: border-box; }
+  
+  body {
+    background-color: #060d1f;
+    color: #e2e8f0;
+    font-family: 'DM Sans', sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Syne', sans-serif;
+  }
+
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: #0a1628; }
+  ::-webkit-scrollbar-thumb { background: #1a3460; border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: #0ea5e9; }
+}
+
+@layer components {
+  .card {
+    @apply bg-navy-800 border border-navy-700 rounded-xl;
+  }
+  
+  .btn-primary {
+    @apply bg-accent-500 hover:bg-accent-400 text-white font-medium px-4 py-2 rounded-lg transition-all duration-200 text-sm flex items-center gap-2 cursor-pointer;
+  }
+  
+  .btn-secondary {
+    @apply bg-navy-700 hover:bg-navy-750 text-slate-300 font-medium px-4 py-2 rounded-lg transition-all duration-200 text-sm flex items-center gap-2 border border-navy-700 cursor-pointer;
+  }
+
+  .btn-danger {
+    @apply bg-red-900/40 hover:bg-red-800/60 text-red-300 font-medium px-3 py-1.5 rounded-lg transition-all duration-200 text-sm flex items-center gap-1.5 border border-red-800/50 cursor-pointer;
+  }
+
+  .btn-edit {
+    @apply bg-amber-900/30 hover:bg-amber-800/50 text-amber-300 font-medium px-3 py-1.5 rounded-lg transition-all duration-200 text-sm flex items-center gap-1.5 border border-amber-800/40 cursor-pointer;
+  }
+
+  .form-input {
+    @apply w-full bg-navy-900 border border-navy-700 rounded-lg px-3 py-2 text-slate-200 text-sm placeholder-slate-500 focus:outline-none focus:border-accent-500 focus:ring-1 focus:ring-accent-500/30 transition-colors;
+  }
+
+  .form-label {
+    @apply block text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wide;
+  }
+
+  .table-header {
+    @apply text-xs font-semibold text-slate-400 uppercase tracking-wider px-4 py-3 text-left;
+  }
+
+  .table-cell {
+    @apply px-4 py-3 text-sm text-slate-300;
+  }
+
+  .table-row {
+    @apply border-b border-navy-700 hover:bg-navy-750 transition-colors;
+  }
+
+  .page-title {
+    @apply text-2xl font-bold text-white font-display;
+  }
+
+  .section-title {
+    @apply text-lg font-semibold text-white font-display;
+  }
+}
+
+/* Status badge colors */
+.status-open { @apply bg-blue-900/40 text-blue-300 border-blue-700/50; }
+.status-closed { @apply bg-green-900/40 text-green-300 border-green-700/50; }
+.status-investigation { @apply bg-amber-900/40 text-amber-300 border-amber-700/50; }
+.status-pending { @apply bg-purple-900/40 text-purple-300 border-purple-700/50; }
+.status-guilty { @apply bg-red-900/40 text-red-300 border-red-700/50; }
+.status-acquitted { @apply bg-emerald-900/40 text-emerald-300 border-emerald-700/50; }
+.status-dismissed { @apply bg-slate-800 text-slate-400 border-slate-700; }
+
+/* Modal overlay */
+.modal-overlay {
+  @apply fixed inset-0 z-50 flex items-center justify-center p-4;
+  background: rgba(6, 13, 31, 0.85);
+  backdrop-filter: blur(4px);
+}
+
+/* Sidebar active item */
+.nav-item-active {
+  @apply bg-accent-500/10 text-accent-400 border-l-2 border-accent-500;
+}
+
+.nav-item {
+  @apply text-slate-400 hover:text-slate-200 hover:bg-navy-700 border-l-2 border-transparent transition-all duration-150;
+}
+
+/* Evidence card colors */
+.ev-cctv { @apply border-l-4 border-blue-500; }
+.ev-weapon { @apply border-l-4 border-red-500; }
+.ev-dna { @apply border-l-4 border-green-500; }
+.ev-digital { @apply border-l-4 border-purple-500; }
+.ev-witness { @apply border-l-4 border-amber-500; }
+.ev-document { @apply border-l-4 border-orange-500; }
+.ev-fingerprint { @apply border-l-4 border-cyan-500; }
+.ev-other { @apply border-l-4 border-slate-500; }
+
+/* Animations */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-in { animation: fadeIn 0.2s ease-out forwards; }
+
+@keyframes slideIn {
+  from { opacity: 0; transform: scale(0.97) translateY(-8px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+.animate-slide-in { animation: slideIn 0.2s ease-out forwards; }
