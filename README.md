@@ -98,6 +98,8 @@ PORT=5000
 ## Features
 
 ### Dashboard
+- **Geospatial Map:** Interactive Leaflet.js map plotting crime density using lat/lng coordinates (Novelty Feature)
+- **City Hotspots:** Evaluated via advanced SQL `RANK() OVER (PARTITION BY city)` window functions (Novelty DB Concept)
 - Stat cards: total crimes, open/closed cases, officers, stations, FIRs, evidence
 - Pie chart: crime type distribution
 - Bar chart: crimes per city

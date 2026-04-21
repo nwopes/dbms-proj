@@ -57,4 +57,36 @@ router.get('/recent-incidents', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+router.get('/advanced-stats', async (req, res) => {
+  try {
+    const [rows] = await pool.query(`
+      WITH RankedCrimes AS (
+        SELECT l.city, c.crime_type, COUNT(*) as crime_count,
+               RANK() OVER (PARTITION BY l.city ORDER BY COUNT(*) DESC, c.crime_type ASC) as rnk
+        FROM Crime c
+        JOIN Location l ON c.location_id = l.location_id
+        GROUP BY l.city, c.crime_type
+      )
+      SELECT city, crime_type, crime_count 
+      FROM RankedCrimes 
+      WHERE rnk = 1
+      ORDER BY crime_count DESC;
+    `);
+    res.json(rows);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.get('/locations-geospatial', async (req, res) => {
+  try {
+    const [rows] = await pool.query(`
+      SELECT l.city, l.latitude, l.longitude, COUNT(c.crime_id) as crime_count
+      FROM Location l
+      LEFT JOIN Crime c ON l.location_id = c.location_id
+      WHERE l.latitude IS NOT NULL AND l.longitude IS NOT NULL
+      GROUP BY l.city, l.latitude, l.longitude
+    `);
+    res.json(rows);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 module.exports = router;

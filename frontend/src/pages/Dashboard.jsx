@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, AreaChart, Area, ResponsiveContainer, Legend } from 'recharts'
 import api from '../api'
 import { fmtDate, statusBadge } from '../utils'
+import CrimeMap from '../components/CrimeMap'
 
 const CHART_COLORS = ['#0ea5e9', '#38bdf8', '#7dd3fc', '#bae6fd', '#e0f2fe', '#f0abfc', '#c084fc']
 
@@ -46,6 +47,7 @@ export default function Dashboard() {
   const [perCity, setPerCity] = useState([])
   const [monthly, setMonthly] = useState([])
   const [recent, setRecent] = useState([])
+  const [advancedStats, setAdvancedStats] = useState([])
 
   useEffect(() => {
     api.get('/dashboard/stats').then(r => setStats(r.data)).catch(() => {})
@@ -53,6 +55,7 @@ export default function Dashboard() {
     api.get('/dashboard/crimes-per-city').then(r => setPerCity(r.data)).catch(() => {})
     api.get('/dashboard/monthly-trends').then(r => setMonthly(r.data.map(d => ({ ...d, month: d.month?.slice(5) || d.month })))).catch(() => {})
     api.get('/dashboard/recent-incidents').then(r => setRecent(r.data)).catch(() => {})
+    api.get('/dashboard/advanced-stats').then(r => setAdvancedStats(r.data)).catch(() => {})
   }, [])
 
   return (
@@ -113,6 +116,33 @@ export default function Dashboard() {
               </BarChart>
             </ResponsiveContainer>
           ) : <div className="h-60 flex items-center justify-center text-slate-600">No data</div>}
+        </div>
+      </div>
+
+      {/* Novelty: Crime Map & Top Crime Insight */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2 relative z-0">
+          <CrimeMap />
+        </div>
+        <div className="card p-5 overflow-auto max-h-[400px]">
+          <h2 className="section-title mb-4 flex items-center gap-2">
+            <span className="text-xl">🏆</span> City Hotspots
+          </h2>
+          <p className="text-[10px] text-slate-500 mb-3 uppercase tracking-widest font-semibold">Processed via SQL Window Functions</p>
+          <div className="space-y-3">
+            {advancedStats.map((stat, i) => (
+              <div key={i} className="bg-navy-900/60 rounded-xl p-3 border border-navy-700/50 flex justify-between items-center transition-all hover:bg-navy-800">
+                <div>
+                  <p className="text-slate-200 text-sm font-semibold">{stat.city}</p>
+                  <p className="text-xs text-slate-400 mt-0.5"><span className="text-slate-500">Peak Crime: </span>{stat.crime_type}</p>
+                </div>
+                <div className="h-8 w-8 rounded-full bg-red-500/20 text-red-400 flex items-center justify-center font-bold text-xs ring-1 ring-red-500/30">
+                  {stat.crime_count}
+                </div>
+              </div>
+            ))}
+            {advancedStats.length === 0 && <p className="text-slate-600 text-sm text-center py-5">No advanced stats</p>}
+          </div>
         </div>
       </div>
 
