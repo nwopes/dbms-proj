@@ -36,13 +36,13 @@ The system securely manages over 13 interrelated relational entities, all strict
 
 ## Team
 
-| Name | Roll Number | Role |
+| Name | Roll Number | Contributions |
 |------|-------------|------|
-| **Ishanvi Singh** | 2410110150 | Team Lead / Architecture |
-| **Anant Joshi** | 2410110049 | Backend & DB Design |
-| **Akshat Bansal** | 2410110039 | Frontend & Analytics |
-| **Arpit Goel** | 2410110075 | UI/UX & Geospatial Mapping |
-| **Manasvi Sharma** | 2410110195 | Security & NLP Integration |
+| **Akshat Bansal** | 2410110039 | **Project Lead & Full Stack:** Architecture, MERN setup, Dashboard analytics, API coordination. |
+| **Ishanvi Singh** | 2410110150 | **DB Design & SQL:** ER Diagram, DDL Schema (3NF/BCNF), constraints, and documentation. |
+| **Anant Joshi** | 2410110049 | **Advanced DB & Routes:** SQL routines (Procedures, Triggers, Views) and backend CRUD APIs. |
+| **Arpit Goel** | 2410110075 | **Frontend UI & Novelties:** CRUD Pages, PDF Reports, Evidence Uploads, and Audit Logging. |
+| **Manasvi Sharma** | 2410110195 | **Data & QA:** DML statements, sample seed generation, transaction testing, and Report Author. |
 
 **Submitted to:** Prof. Sonia Khetarpaul  
 **Course:** Introduction to Database Systems  
