@@ -21,7 +21,6 @@
 - [Project Structure](#project-structure)
 - [Getting Started](#getting-started)
 - [API Reference](#api-reference)
-- [Screenshots](#screenshots)
 
 ---
 
@@ -121,8 +120,8 @@ Stores geographic location data. Extended to support floating-point GPS coordina
 | `city` | VARCHAR(100) | NULL |
 | `state` | VARCHAR(100) | NULL |
 | `pincode` | VARCHAR(10) | NULL |
-| `latitude` | DECIMAL(10,6) | NULL |
-| `longitude` | DECIMAL(10,6) | NULL |
+| `latitude` | DECIMAL(10,7) | NULL |
+| `longitude` | DECIMAL(10,7) | NULL |
 
 #### 2. `Person`
 The core civic entity table tracking involved individuals (suspects, victims, witnesses).
@@ -169,7 +168,7 @@ The catalyst table. Every recorded criminal variance begins here.
 | `time` | TIME | NULL |
 | `location_id` | INT | FK → Location |
 | `description` | TEXT | NULL |
-| `status` | VARCHAR(50) | `Open` / `Closed` / `Investigating` |
+| `status` | VARCHAR(50) | `Open` / `Closed` / `Under Investigation` |
 
 #### 6. `Case_File`
 Investigation node opened for each authenticated crime, housing evidence and officers.
@@ -233,9 +232,11 @@ Physical/Digital item tracker linking items collected to cases.
 | `description` | TEXT | NULL |
 | `collected_date` | DATE | NULL |
 | `file_path` | VARCHAR(500) | NULL (Attachment Pointer) |
+| `file_name` | VARCHAR(255) | NULL |
+| `file_type` | VARCHAR(100) | NULL |
 
 #### 12. `Audit_Log` *(Secure Ledger)*
-Immutable immutable record tracking DML operations protecting internal system truth.
+Immutable record tracking all DML operations, protecting internal system truth.
 
 | Column | Type | Constraints |
 |--------|------|-------------|
@@ -280,56 +281,68 @@ The structural integrity relies heavily on explicitly declared native constraint
 
 *   **Stored Procedure: `GetCaseDetails(p_case_id)`**
     Compiles a massive multi-table inner join fetching `Case_File`, `Crime`, `Police_Officer`, and `Location` natively inside MySQL caching, bypassing repetitive API looping.
+*   **Stored Procedure: `ListOpenCases()`**
+    Uses a **cursor** to iterate over all open Case Files and return each case with its crime type and lead officer — demonstrating cursor-based row-level processing inside MySQL.
 *   **Stored Function: `GetCrimeCount(p_city)`**
-    Operates as an isolated deterministic SQL math function enabling rapid analytics pulls.
-*   **Database Triggers (`after_crime_insert`)**
-    Fires on backend schema insert events. Inserting a crime automates the creation of an attached investigatory `Case_File`. This guarantees structural cohesion.
-*   **Audit Cursors & Triggers (`audit_crime_update`)**
-    Traverses edits and systematically records footprint actions guaranteeing an immutable DML record history.
+    Operates as an isolated deterministic SQL math function enabling rapid analytics pulls per city.
+*   **18 Database Triggers**
+    Covering all DML operations (INSERT / UPDATE / DELETE) on `Crime`, `Case_File`, `FIR`, `Evidence`, `Court_Case`, and `Crime_Person`. Two special triggers (`after_court_verdict_insert`, `after_court_verdict_update`) automatically close the linked Case File when a final verdict (Guilty/Acquitted/Dismissed) is recorded.
+*   **4 Views**
+    `vw_crime_summary`, `vw_case_details`, `vw_fir_details`, `vw_suspect_list` — pre-joined snapshots used by API queries to reduce round-trips.
 
 ---
 
 ### Advanced SQL & ACID Transactions
 
 #### 1. Common Table Expressions (CTEs) & Window Functions
-We utilize highly advanced native SQL logic beyond standard CRUD. 
-On the Dashboard `api/dashboard/advanced-stats`, a heavily customized query utilizes a `WITH RankedCrimes AS (...)` CTE to group overlapping crime variants. It then explicitly invokes an Analytical Window Function, `RANK() OVER (PARTITION BY city ORDER BY count DESC)`, filtering results natively to output solely the peak crime hotpot type per location array.
+We utilize highly advanced native SQL logic beyond standard CRUD.
+On the Dashboard `api/dashboard/advanced-stats`, a heavily customized query utilizes a `WITH RankedCrimes AS (...)` CTE to group overlapping crime variants. It then explicitly invokes an Analytical Window Function, `RANK() OVER (PARTITION BY city ORDER BY count DESC)`, filtering results natively to output solely the peak crime hotspot type per location array.
 
 #### 2. Atomic AI Ingestion (`analyze.js`)
-When an officer submits wild unstructured text to the Natural Language AI interface, the API returns complex nested JSON. Saving this involves creating `Locations`, `Crimes`, `Persons` and tying `Crime_Person` simultaneously. 
-* To prevent partial logic failures, we explicitly wrap the block inside an organic `await connection.beginTransaction()`. 
-* If ANY query sequence fails due to invalid parameters, `await connection.rollback()` triggers—securing the environment via classical **Atomicity (ACID)** rules.
+When an officer submits wild unstructured text to the Natural Language AI interface, the API returns complex nested JSON. Saving this involves creating `Locations`, `Crimes`, `Persons` and tying `Crime_Person` simultaneously.
+* To prevent partial logic failures, we explicitly wrap the block inside an organic `await connection.beginTransaction()`.
+* If ANY query sequence fails due to invalid parameters, `await connection.rollback()` triggers — securing the environment via classical **Atomicity (ACID)** rules.
 
 ---
 
 ## Application Features
 
 ### 1. Dashboard & Geospatial Overview
-The centralized command station of the application.
 - **Geospatial Hotspot Map:** Plots `Latitude/Longitude` database inputs directly into a React-Leaflet interactive cartography hub representing real-time criminal density.
-- **Advanced City Hotspots:** Utilizes the aforementioned Window Functions to evaluate worst-case scenario metric types dynamically without manual intervention.
-- **Aggregate Analytics:** Statistical stat cards, pie distributions, area timelines, and bar layouts parsed seamlessly via Recharts.
+- **Advanced City Hotspots:** Utilizes Window Functions to evaluate worst-case scenario metric types dynamically.
+- **Recent Incidents:** Shows the latest 5 crimes with identified suspects and victims pulled via `GROUP_CONCAT`.
+- **Aggregate Analytics:** Statistical stat cards, pie distributions, area timelines, and bar layouts parsed via Recharts.
 
 ### 2. Crime Records Core
-- Provides exhaustive paginated `CRUD` capabilities securely interfacing with `crimes.js`.
-- Capable of deeply nested filtration using dynamic `WHERE / LIKE` SQL queries depending on user payload parameters.
-- Linking functionality directly routes to suspects/victims matrices.
+- Full `CRUD` with real-time **Persons Involved** management — attach suspects, victims, and witnesses directly at crime creation or edit time.
+- Edit mode pre-loads existing `Crime_Person` links and diffs old vs new on save.
+- Filter by status, crime type, and city search.
 
 ### 3. Investigation Hub (Case Files)
-- Generates directly from the original Crime catalyst. Highly secure structural `CRUD` limits.
-- Supports PDF download structures aggregating multi-table case elements into cleanly formatted incident dossiers.
-- Contains specific integrations utilizing the GPT-4o-mini interface to autogenerate abstract forensic summaries reading Case properties dynamically.
+- Full `CRUD` with **Assigned Officers** management (add/remove officers per case).
+- Warn if a crime already has a case file to prevent duplicates.
+- End date validated to prevent logical inconsistencies (`end_date ≥ start_date`).
+- PDF report download aggregating multi-table case elements into formatted incident dossiers.
 
 ### 4. Forensic Evidence Locker
-- Advanced card-based viewing arrays natively segregating inputs (`CCTV`, `Weapon`, `DNA Data`, `Digital Records`).
-- Natively bound to `Case IDs` supporting direct Multi-part `Multer` file routing for localized data retention uploads attached directly to DB Pointers.
+- Card-based views segregating `CCTV`, `Weapon`, `DNA`, `Digital Records`, `Documents`, etc.
+- Collection date validated against the crime date — evidence cannot predate the offence.
+- Native Multer file routing for attachment uploads linked directly to DB pointers.
 
 ### 5. FIR Generation & Court Tracking
-- **FIR Logic:** Formalizes relationships between `Person` filing entities and `Crime` events structurally via timestamp enforcement.
-- **Court Cases:** Maps judicial trajectories. Shifting a case from `Pending` to `Acquitted`/`Guilty` implicitly finalizes associated open Case Files.
+- **FIR Logic:** Filing date validated against the crime date — an FIR cannot be filed before the crime occurred.
+- **Court Cases:** Hearing date validated against the case start date. Setting a final verdict (Guilty/Acquitted/Dismissed) automatically closes the linked Case File via both a backend trigger and application logic.
 
-### 6. Persons, Officers, and Location Registry
-- Renders interconnected localized relational tables allowing administrative overview over distinct `Officer Badge IDs`, `Person Roles`, and strictly identified structural `Location Pins`.
+### 6. Persons, Officers & Location Registry
+- Person delete pre-checks `Crime_Person` and `FIR` references and returns actionable error messages.
+- Officer delete pre-checks active case assignments before allowing deletion.
+
+### 7. Audit Log
+- Paginated, filterable ledger of all INSERT/UPDATE/DELETE events across 7 tables including `Crime_Person`.
+- 18 triggers ensure every data mutation is captured automatically going forward.
+
+### 8. AI Case Digest (`analyze.js`)
+- Submit unstructured free-text crime reports and have GPT-4o-mini extract structured entities (Location, Crime, Persons) wrapped in an ACID transaction.
 
 ---
 
@@ -337,36 +350,61 @@ The centralized command station of the application.
 
 ```text
 crime-mgmt/
-├── schema.sql                  # Massive DB Blueprint (DDL, Roles, Views)
-├── novelty_patch.sql           # Audit Log Appendices & Triggers
+├── database/
+│   └── setup.sql               # ★ Complete all-in-one DB setup (schema + 312 seed rows + 18 triggers)
+├── fixes_patch.sql             # Incremental patch (fixes applied to fresh installs via setup.sql)
+├── novelty_patch.sql           # Legacy: Audit Log appendices & earlier triggers
+├── schema.sql                  # Legacy: Original DB Blueprint (DDL, Roles, Views)
 ├── README.md
+│
 ├── backend/
-│   ├── server.js               # Primary Express App Logic Hook
-│   ├── db.js                   # MySQL connection pooling wrapper
-│   ├── patch_locations.js      # Map Coordinates seeding runtime
-│   ├── .env                    # Internal SECRETS (OpenAI, User/Pass)
-│   ├── uploads/                # Dynamic Storage Pathing
+│   ├── server.js               # Primary Express app entry point
+│   ├── db.js                   # MySQL connection pool wrapper
+│   ├── setup_db.js             # ★ Node.js database setup runner (npm run setup-db)
+│   ├── patch_locations.js      # GPS coordinate seeding utility
+│   ├── .env                    # Secrets (DB credentials, OpenAI key) — NOT committed
+│   ├── .env.example            # Template for .env
+│   ├── uploads/                # Multer evidence file storage
 │   └── routes/
-│       ├── analyze.js          # OpenAI Transactional Ingestion
-│       ├── dashboard.js        # Window Function & Geospatial Query Maps
-│       ├── cases.js            # Node Routing (Cases/FIR mapping)
-│       └── ...
+│       ├── analyze.js          # OpenAI transactional ingestion (ACID)
+│       ├── dashboard.js        # Window Function & geospatial query maps
+│       ├── crimes.js           # Crime CRUD + person linking
+│       ├── cases.js            # Case File CRUD + officer sync
+│       ├── crimePersons.js     # Crime_Person junction (GET/POST/PUT/DELETE)
+│       ├── caseOfficers.js     # Case_Officer junction
+│       ├── courtCases.js       # Court cases + auto-close verdict logic
+│       ├── evidence.js         # Evidence CRUD + file uploads
+│       ├── firs.js             # FIR CRUD
+│       ├── persons.js          # Persons CRUD + FK-safe delete
+│       ├── officers.js         # Officers CRUD + FK-safe delete
+│       ├── locations.js        # Locations CRUD
+│       ├── auditLog.js         # Audit log paginated read
+│       └── stations.js         # Police stations CRUD
+│
 └── frontend/
-    ├── vite.config.js          # Compiling & Port Proxy routing
+    ├── vite.config.js          # Dev server + /api proxy to :5000
     ├── tailwind.config.js
     ├── package.json
     └── src/
-        ├── App.jsx             # React Sub-Navigation Router Link
-        ├── index.css
+        ├── App.jsx             # React router + navigation shell
+        ├── api.js              # Axios base instance (baseURL: /api)
+        ├── utils.js            # Shared helpers (fmtDate, statusBadge, ROLES…)
+        ├── index.css           # Global dark-theme design system
         ├── components/
-        │   ├── CrimeMap.jsx    # The core Leaflet Mapping Matrix
-        │   ├── Sidebar.jsx
-        │   └── Modal.jsx
+        │   ├── CrimeMap.jsx    # Leaflet geospatial map
+        │   ├── Sidebar.jsx     # Navigation sidebar
+        │   ├── Modal.jsx       # Reusable modal overlay
+        │   └── ConfirmDialog.jsx
         └── pages/
-            ├── Dashboard.jsx   # Live Analytical Display
-            ├── Crimes.jsx
-            ├── Cases.jsx
-            └── Evidence.jsx
+            ├── Dashboard.jsx   # Live analytics + recent incidents with suspects
+            ├── Crimes.jsx      # Crime CRUD + persons-involved management
+            ├── Cases.jsx       # Case CRUD + officer assignment management
+            ├── Evidence.jsx    # Evidence locker + file upload
+            ├── FIRs.jsx        # FIR management
+            ├── CourtCases.jsx  # Court proceedings + verdict auto-close
+            ├── Persons.jsx     # Person registry
+            ├── Officers.jsx    # Officer registry
+            └── AuditLog.jsx    # Filtered, paginated audit trail
 ```
 
 ---
@@ -375,98 +413,228 @@ crime-mgmt/
 
 ### Prerequisites
 
-| Engine Required | Compatibility Version |
+| Requirement | Version |
 |-------------|---------|
-| **Node.js** | v18+ |
-| **npm** | Package Manager Configured |
-| **MySQL** | v8.0 (Crucial requirement for native Window Functions/CTEs compatibility) |
+| **Node.js** | v18 or newer |
+| **npm** | v9 or newer (bundled with Node.js) |
+| **MySQL** | v8.0 — required for Window Functions & CTEs |
 
-### 1. Database Initialization
-Boot your local MySQL client or terminal interface and deploy the comprehensive blueprint schema and logs architecture.
+---
+
+### Step 1 — Clone the repository
 
 ```bash
-mysql -u root -p < schema.sql
-mysql -u root -p < novelty_patch.sql
+git clone <your-repo-url>
+cd crime-mgmt
 ```
-*(This organically bootstraps the relational DB Schema Tables, Custom Constraints, Data Views, Event Triggers, Procedural Limits, The Forensic Audit tables, and thousands of seeded tracking arrays.)*
 
-### 2. Backend Orchestration Configuration
-Configure the MySQL integration and fetch NPM dependencies:
+---
+
+### Step 2 — Configure environment variables
 
 ```bash
 cd backend
-cp .env.example .env
+copy .env.example .env     # Windows
+# cp .env.example .env     # macOS / Linux
 ```
-Open the generated `.env` and assign your secrets:
+
+Open `.env` and fill in your values:
+
 ```env
 DB_HOST=localhost
+DB_PORT=3306
 DB_USER=root
-DB_PASSWORD=your_local_sql_runtime_password
+DB_PASS=your_mysql_password
 DB_NAME=crime_db
 PORT=5000
-OPENAI_API_KEY=sk-your-openai-token-here  # Required for Case Summary AI parsing
+OPENAI_API_KEY=sk-...      # Required only for AI Case Digest feature
 ```
-Compile dependencies and seed coordinates:
+
+> **Note:** `DB_PASS` can be left blank if your local MySQL has no root password.
+
+---
+
+### Step 3 — Install backend dependencies
+
 ```bash
+# (still inside crime-mgmt/backend/)
 npm install
-node patch_locations.js   # Synchronizes GPS variables over Location strings
-npm start
 ```
-*(The REST API interface securely operates at HTTP `localhost:5000`)*
 
-### 3. Frontend App Build
-Launch the presentation interface:
+---
+
+### Step 4 — Set up the database  *(one command)*
+
+This single command drops any existing `crime_db`, recreates it from scratch with the full schema, and populates **312 rows** of India-specific seed data across all 12 tables:
 
 ```bash
-cd frontend
+npm run setup-db
+```
+
+Expected output:
+
+```
+╔═══════════════════════════════════════════╗
+║  Crime Management System — DB Setup      ║
+╚═══════════════════════════════════════════╝
+
+→ Connecting to MySQL   root@localhost:3306
+✓ Connected to MySQL server
+→ Parsed 61 SQL statements from setup.sql
+
+✓ Existing database dropped (clean slate)
+✓ Database crime_db created
+  Table created  ×12
+  View created   ×4
+  ...
+✨  Setup complete!
+
+  Database Summary:
+  · Location               15 rows
+  · Person                 20 rows
+  · Police_Station         10 rows
+  · Police_Officer         15 rows
+  · Crime                  25 rows
+  · Case_File              24 rows
+  · FIR                    15 rows
+  · Evidence               20 rows
+  · Court_Case              8 rows
+  · Crime_Person           49 rows
+  · Case_Officer           38 rows
+  · Audit_Log              73 rows
+  ───────────────────────────────────
+  · TOTAL                 312 rows
+
+  You can now start the server:  npm run dev
+```
+
+> **Troubleshooting:**
+> - `Connection failed` → Make sure MySQL is running and your `.env` credentials are correct.
+> - `Access denied` → Check `DB_USER` and `DB_PASS` in `.env`.
+
+---
+
+### Step 5 — Start the backend server
+
+```bash
+# (inside crime-mgmt/backend/)
+npm run dev         # Hot-reload with nodemon (recommended for development)
+# or
+npm start           # Plain node
+```
+
+The REST API is now live at **`http://localhost:5000`**.
+
+---
+
+### Step 6 — Install & start the frontend
+
+Open a **new terminal window**:
+
+```bash
+cd crime-mgmt/frontend
 npm install
 npm run dev
 ```
-*(React operates natively at `http://localhost:3000`. Vite automatically acts as a cross-origin reverse proxy channeling `/api` paths reliably and mitigating CORS conflicts).*
+
+The React app is now live at **`http://localhost:3000`**.  
+Vite proxies all `/api` requests to `:5000` automatically — no CORS setup needed.
+
+---
+
+### Quick-start summary
+
+```bash
+# Terminal 1 — Database + Backend
+cd crime-mgmt/backend
+npm install
+npm run setup-db       # ← sets up DB with all data (run once)
+npm run dev            # ← start API server
+
+# Terminal 2 — Frontend
+cd crime-mgmt/frontend
+npm install
+npm run dev
+```
+
+Open **http://localhost:3000** in your browser. 🎉
+
+---
+
+### Re-running the setup
+
+`npm run setup-db` is **idempotent** — it drops and recreates the database every time. Run it again any time you want a clean slate:
+
+```bash
+cd crime-mgmt/backend
+npm run setup-db
+```
 
 ---
 
 ## API Reference
 
-All application endpoints resolve securely utilizing pure JSON REST responses routing off base `http://localhost:5000`.
+All application endpoints resolve using pure JSON REST responses off base `http://localhost:5000`.
 
-### Data Intelligence
-| Protocol | Route Pathing | Native Description |
-|--------|----------|-------------|
-| `GET` | `/api/dashboard/stats` | Aggregated array sums for system nodes |
-| `GET` | `/api/dashboard/advanced-stats` | Generates Window Function (`RANK()`) city analytics |
-| `GET` | `/api/dashboard/locations-geospatial` | Outputs `LAT/LNG` objects paired with crime rates |
-| `GET` | `/api/dashboard/monthly-trends` | Temporal timeline data arrays |
+### Dashboard & Analytics
 
-### Operations & Case Flow
-| Protocol | Route Pathing | Native Description |
+| Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET, POST, PUT, DELETE`| `/api/crimes` | `CRUD` operations mutating Crime Table logic |
-| `GET, POST, PUT, DELETE`| `/api/cases` | Integrates deeply with linked Officer junction constraints |
-| `GET, POST, PUT, DELETE`| `/api/evidence`| Handles internal text + physical Multer uploaded references |
-| `GET, POST, PUT, DELETE`| `/api/court-cases`| Resolves trajectories influencing Case limits |
+| `GET` | `/api/dashboard/stats` | Aggregated counts for all system entities |
+| `GET` | `/api/dashboard/advanced-stats` | CTE + `RANK() OVER` Window Function city analytics |
+| `GET` | `/api/dashboard/recent-incidents` | Latest 5 crimes with suspects & victims (`GROUP_CONCAT`) |
+| `GET` | `/api/dashboard/locations-geospatial` | `LAT/LNG` paired with crime counts for the map |
+| `GET` | `/api/dashboard/monthly-trends` | Monthly crime count time series |
+| `GET` | `/api/dashboard/crime-types` | Crime count grouped by type (pie chart) |
+| `GET` | `/api/dashboard/crimes-per-city` | Crime count grouped by city (bar chart) |
 
-### Relational Bridges (Junction Endpoints)
-| Protocol | Route Pathing | Native Description |
-|--------|----------|-------------|
-| `POST, DELETE`| `/api/crime-persons` | Manages M:N insertion linking Person arrays |
-| `POST, DELETE`| `/api/case-officers` | Generates investigation team hooks |
+### Crime Management
 
-### External AI (OpenAI Integration)
-| Protocol | Route Pathing | Native Description |
+| Method | Endpoint | Description |
 |--------|----------|-------------|
-| `POST` | `/api/analyze` | Generates intelligent entity extraction via unstructured parsing |
+| `GET` | `/api/crimes` | List all crimes (with city from Location join) |
+| `GET` | `/api/crimes/:id` | Single crime with linked persons and case files |
+| `POST` | `/api/crimes` | Create a crime record |
+| `PUT` | `/api/crimes/:id` | Update a crime record |
+| `DELETE` | `/api/crimes/:id` | Delete a crime record |
+
+### Case Files
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/cases` | List all cases with crime type, officer, city |
+| `GET` | `/api/cases/:id` | Single case with officers, evidence, and court data |
+| `POST` | `/api/cases` | Create case (rejects duplicate crime_id with 409) |
+| `PUT` | `/api/cases/:id` | Update case (validates end_date ≥ start_date) |
+| `DELETE` | `/api/cases/:id` | Delete case |
+
+### Other Core Entities
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET/POST/PUT/DELETE` | `/api/evidence` | Evidence CRUD + file upload via Multer |
+| `GET/POST/PUT/DELETE` | `/api/court-cases` | Court cases — PUT/POST auto-closes case on final verdict |
+| `GET/POST/PUT/DELETE` | `/api/firs` | FIR management |
+| `GET/POST/PUT/DELETE` | `/api/persons` | Persons — DELETE pre-checks FK references |
+| `GET/POST/PUT/DELETE` | `/api/officers` | Officers — DELETE pre-checks active case assignments |
+| `GET/POST/PUT/DELETE` | `/api/locations` | Locations |
+| `GET` | `/api/audit-log` | Paginated, filterable audit trail |
+
+### Junction Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET/POST` | `/api/crime-persons` | Link persons to crimes |
+| `PUT` | `/api/crime-persons` | Update a person's role in a crime |
+| `DELETE` | `/api/crime-persons` | Unlink a person from a crime |
+| `GET/POST/DELETE` | `/api/case-officers` | Assign / remove officers from cases |
+
+### AI Integration
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/api/analyze` | Submit free-text; GPT-4o-mini extracts & saves structured crime data inside an ACID transaction |
 
 ---
 
-## Screenshots
-
-> *The holistic application relies on a dark-themed, militaristic navy aesthetic interspersed with electric blue actions, dynamic modal overlays, and cleanly delineated relational data blocks.*
-
-- **Dashboard:** Unparalleled geospatial charting combining statistical components and map integrations.
-- **Audit Logging:** Clean analytical grid tracking comprehensive Before/After snapshots mitigating internal data sabotage.
-- **Evidence Interface:** Card-centric design explicitly binding attached data files, timelines, and DNA mappings to secure locked cases.
-- **AI Case Digest:** Auto-generated natural language incident overviews dynamically rendered instantly onto standard Case Files.
-
----
-*Powered heavily by MySQL 8.0 Constraints · Engineered globally on React 18 / Tailwind CSS / Node.js Express*
+*Powered by MySQL 8.0 · React 18 · Tailwind CSS · Node.js Express*
