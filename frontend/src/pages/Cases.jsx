@@ -18,6 +18,11 @@ export default function Cases() {
   const [detail, setDetail] = useState(null)
   const [filterStatus, setFilterStatus] = useState('')
 
+  // Issue #6: Track assigned officers for the case being edited
+  const [assignedOfficers, setAssignedOfficers] = useState([])   // [{officer_id, name, designation, badge_number}]
+  const [origOfficers, setOrigOfficers] = useState([])
+  const [newOfficerId, setNewOfficerId] = useState('')
+
   const load = () => {
     api.get('/cases').then(r => setCases(r.data)).catch(() => toast.error('Failed to load cases'))
     api.get('/crimes').then(r => setCrimes(r.data)).catch(() => {})
@@ -27,21 +32,92 @@ export default function Cases() {
 
   const filtered = filterStatus ? cases.filter(c => c.case_status === filterStatus) : cases
 
-  const openAdd = () => { setForm(empty); setSelected(null); setModal('add') }
-  const openEdit = (c) => {
-    setForm({ crime_id: c.crime_id, lead_officer_id: c.lead_officer_id, case_status: c.case_status, start_date: c.start_date?.split('T')[0] || '', end_date: c.end_date?.split('T')[0] || '' })
-    setSelected(c); setModal('edit')
+  const openAdd = () => {
+    setForm(empty)
+    setSelected(null)
+    setAssignedOfficers([])
+    setOrigOfficers([])
+    setNewOfficerId('')
+    setModal('add')
   }
+
+  const openEdit = async (c) => {
+    setForm({ crime_id: c.crime_id, lead_officer_id: c.lead_officer_id, case_status: c.case_status, start_date: c.start_date?.split('T')[0] || '', end_date: c.end_date?.split('T')[0] || '' })
+    setSelected(c)
+    setAssignedOfficers([])
+    setOrigOfficers([])
+    setNewOfficerId('')
+    setModal('edit')
+    // Issue #6: Fetch current assigned officers
+    try {
+      const r = await api.get(`/cases/${c.case_id}`)
+      const linked = (r.data.officers || []).map(o => ({ officer_id: String(o.officer_id), name: o.name, designation: o.designation, badge_number: o.badge_number }))
+      setAssignedOfficers(linked)
+      setOrigOfficers(linked)
+    } catch { /* keep empty */ }
+  }
+
   const openView = async (c) => {
     setSelected(c); setModal('view'); setDetail(null)
     try { const r = await api.get(`/cases/${c.case_id}`); setDetail(r.data) } catch { setDetail(c) }
   }
 
+  // Issue #6: Add an officer to the assignment list
+  const addOfficer = () => {
+    if (!newOfficerId) return
+    if (assignedOfficers.find(o => o.officer_id === newOfficerId)) {
+      return toast.error('Officer already assigned')
+    }
+    const officer = officers.find(o => String(o.officer_id) === newOfficerId)
+    if (!officer) return
+    setAssignedOfficers(ao => [...ao, { officer_id: newOfficerId, name: officer.name, designation: officer.designation, badge_number: officer.badge_number }])
+    setNewOfficerId('')
+  }
+
+  const removeOfficer = (officer_id) => {
+    setAssignedOfficers(ao => ao.filter(o => o.officer_id !== officer_id))
+  }
+
+  // Sync Case_Officer records after saving
+  const syncOfficers = async (caseId) => {
+    const origIds = origOfficers.map(o => o.officer_id)
+    const newIds = assignedOfficers.map(o => o.officer_id)
+
+    // Remove de-assigned officers
+    for (const orig of origOfficers) {
+      if (!newIds.includes(orig.officer_id)) {
+        try { await api.delete('/case-officers', { data: { case_id: caseId, officer_id: orig.officer_id } }) } catch { /* ignore */ }
+      }
+    }
+    // Add newly assigned officers
+    for (const ao of assignedOfficers) {
+      if (!origIds.includes(ao.officer_id)) {
+        try { await api.post('/case-officers', { case_id: caseId, officer_id: ao.officer_id }) } catch { /* ignore */ }
+      }
+    }
+  }
+
   const handleSave = async () => {
     if (!form.crime_id || !form.lead_officer_id) return toast.error('Crime and lead officer are required')
+
+    // Issue #10: Validate end date is not before start date
+    if (form.end_date && form.start_date && form.end_date < form.start_date) {
+      return toast.error('End date cannot be before start date')
+    }
+
     try {
-      if (modal === 'add') { await api.post('/cases', form); toast.success('Case file created') }
-      else { await api.put(`/cases/${selected.case_id}`, form); toast.success('Case updated') }
+      let caseId
+      if (modal === 'add') {
+        const r = await api.post('/cases', form)
+        caseId = r.data.case_id
+        toast.success('Case file created')
+      } else {
+        await api.put(`/cases/${selected.case_id}`, form)
+        caseId = selected.case_id
+        toast.success('Case updated')
+      }
+      // Issue #6: Sync assigned officers
+      await syncOfficers(caseId)
       setModal(null); load()
     } catch (e) { toast.error(e.response?.data?.error || 'Operation failed') }
   }
@@ -50,6 +126,9 @@ export default function Cases() {
     try { await api.delete(`/cases/${deleteId}`); toast.success('Deleted'); setDeleteId(null); load() }
     catch (e) { toast.error(e.response?.data?.error || 'Delete failed') }
   }
+
+  // Officers available to assign (those not already in the list)
+  const availableOfficers = officers.filter(o => !assignedOfficers.find(ao => ao.officer_id === String(o.officer_id)))
 
   return (
     <div className="p-6 space-y-5 animate-fade-in">
@@ -110,14 +189,25 @@ export default function Cases() {
       </div>
 
       {(modal === 'add' || modal === 'edit') && (
-        <Modal title={modal === 'add' ? 'Create Case File' : 'Edit Case File'} onClose={() => setModal(null)}>
+        <Modal title={modal === 'add' ? 'Create Case File' : 'Edit Case File'} onClose={() => setModal(null)} wide>
           <div className="space-y-4">
             <div>
               <label className="form-label">Crime *</label>
               <select className="form-input" value={form.crime_id} onChange={e => setForm(f => ({ ...f, crime_id: e.target.value }))}>
                 <option value="">— Select Crime —</option>
-                {crimes.map(c => <option key={c.crime_id} value={c.crime_id}>#{c.crime_id} · {c.crime_type} ({fmtDate(c.date)})</option>)}
+                {crimes.map(c => {
+                  // Issue #3: Warn visually if crime already has a case
+                  const hasCaseAlready = cases.some(ca => String(ca.crime_id) === String(c.crime_id) && (!selected || String(ca.case_id) !== String(selected?.case_id)))
+                  return (
+                    <option key={c.crime_id} value={c.crime_id}>
+                      #{c.crime_id} · {c.crime_type} ({fmtDate(c.date)}){hasCaseAlready ? ' ⚠ already has a case' : ''}
+                    </option>
+                  )
+                })}
               </select>
+              {form.crime_id && cases.some(ca => String(ca.crime_id) === String(form.crime_id) && (!selected || String(ca.case_id) !== String(selected?.case_id))) && (
+                <p className="text-xs text-amber-400 mt-1">⚠ This crime already has a case file. Creating another may cause inconsistencies.</p>
+              )}
             </div>
             <div>
               <label className="form-label">Lead Officer *</label>
@@ -139,9 +229,47 @@ export default function Cases() {
               </div>
               <div>
                 <label className="form-label">End Date</label>
-                <input type="date" className="form-input" value={form.end_date} onChange={e => setForm(f => ({ ...f, end_date: e.target.value }))} />
+                <input type="date" className="form-input" value={form.end_date}
+                  min={form.start_date || undefined}
+                  onChange={e => setForm(f => ({ ...f, end_date: e.target.value }))} />
+                {/* Issue #10: Inline validation warning */}
+                {form.end_date && form.start_date && form.end_date < form.start_date && (
+                  <p className="text-xs text-red-400 mt-1">End date cannot be before start date</p>
+                )}
               </div>
             </div>
+
+            {/* Issue #6: Assigned Officers Management */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <label className="form-label mb-0">Assigned Officers</label>
+              </div>
+              <div className="flex gap-2 mb-2">
+                <select className="form-input flex-1" value={newOfficerId} onChange={e => setNewOfficerId(e.target.value)}>
+                  <option value="">— Select officer to assign —</option>
+                  {availableOfficers.map(o => <option key={o.officer_id} value={String(o.officer_id)}>{o.name} · {o.designation}</option>)}
+                </select>
+                <button onClick={addOfficer} className="text-xs px-3 py-1.5 bg-accent-500/10 hover:bg-accent-500/20 text-accent-400 rounded-lg border border-accent-500/30 transition-colors cursor-pointer flex-shrink-0">
+                  + Assign
+                </button>
+              </div>
+              {assignedOfficers.length === 0 ? (
+                <p className="text-xs text-slate-600 italic">No officers assigned. Use the dropdown above to assign.</p>
+              ) : (
+                <div className="space-y-1.5">
+                  {assignedOfficers.map(o => (
+                    <div key={o.officer_id} className="flex items-center justify-between bg-navy-900 rounded-lg px-3 py-2">
+                      <div>
+                        <span className="text-sm text-slate-200">{o.name}</span>
+                        <span className="text-xs text-slate-500 ml-2">{o.designation} · {o.badge_number}</span>
+                      </div>
+                      <button onClick={() => removeOfficer(o.officer_id)} className="text-xs text-red-400 hover:text-red-300 cursor-pointer">✕ Remove</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
             <div className="flex gap-3 pt-2">
               <button onClick={() => setModal(null)} className="btn-secondary flex-1 justify-center">Cancel</button>
               <button onClick={handleSave} className="btn-primary flex-1 justify-center">{modal === 'add' ? 'Create' : 'Save'}</button>

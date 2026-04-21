@@ -30,8 +30,18 @@ export default function FIRs() {
   }
   const openView = (f) => { setSelected(f); setModal('view') }
 
+  // Issue #9: Get the selected crime's date for validation
+  const selectedCrime = crimes.find(c => String(c.crime_id) === String(form.crime_id))
+  const crimeDate = selectedCrime?.date?.split('T')[0] || null
+
   const handleSave = async () => {
     if (!form.crime_id || !form.filed_by || !form.filing_date) return toast.error('Crime, person, and date are required')
+
+    // Issue #9: FIR filing date must be on or after the crime date
+    if (crimeDate && form.filing_date < crimeDate) {
+      return toast.error(`Filing date (${form.filing_date}) cannot be before the crime date (${crimeDate})`)
+    }
+
     try {
       if (modal === 'add') { await api.post('/firs', form); toast.success('FIR filed') }
       else { await api.put(`/firs/${selected.fir_id}`, form); toast.success('FIR updated') }
@@ -95,6 +105,9 @@ export default function FIRs() {
                 <option value="">— Select Crime —</option>
                 {crimes.map(c => <option key={c.crime_id} value={c.crime_id}>#{c.crime_id} · {c.crime_type} ({fmtDate(c.date)})</option>)}
               </select>
+              {crimeDate && (
+                <p className="text-xs text-slate-500 mt-1">Crime occurred on: <span className="text-slate-300 font-mono">{crimeDate}</span> — FIR must be filed on or after this date.</p>
+              )}
             </div>
             <div>
               <label className="form-label">Filed By *</label>
@@ -105,7 +118,13 @@ export default function FIRs() {
             </div>
             <div>
               <label className="form-label">Filing Date *</label>
-              <input type="date" className="form-input" value={form.filing_date} onChange={e => setForm(f => ({ ...f, filing_date: e.target.value }))} />
+              {/* Issue #9: min date is the crime date */}
+              <input type="date" className="form-input" value={form.filing_date}
+                min={crimeDate || undefined}
+                onChange={e => setForm(f => ({ ...f, filing_date: e.target.value }))} />
+              {form.filing_date && crimeDate && form.filing_date < crimeDate && (
+                <p className="text-xs text-red-400 mt-1">Filing date cannot be before the crime date ({crimeDate})</p>
+              )}
             </div>
             <div>
               <label className="form-label">Description</label>

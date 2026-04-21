@@ -48,11 +48,27 @@ router.get('/monthly-trends', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// Issue #14: Enrich recent incidents with identified suspects
 router.get('/recent-incidents', async (req, res) => {
   try {
-    const [rows] = await pool.query(
-      'SELECT c.crime_id, c.crime_type, c.date, c.status, l.city FROM Crime c JOIN Location l ON c.location_id=l.location_id ORDER BY c.date DESC LIMIT 5'
-    );
+    const [rows] = await pool.query(`
+      SELECT c.crime_id, c.crime_type, c.date, c.status, l.city,
+             GROUP_CONCAT(
+               CASE WHEN cp.role = 'Suspect' THEN p.name END
+               ORDER BY p.name SEPARATOR ', '
+             ) as suspects,
+             GROUP_CONCAT(
+               CASE WHEN cp.role = 'Victim' THEN p.name END
+               ORDER BY p.name SEPARATOR ', '
+             ) as victims
+      FROM Crime c
+      JOIN Location l ON c.location_id = l.location_id
+      LEFT JOIN Crime_Person cp ON c.crime_id = cp.crime_id
+      LEFT JOIN Person p ON cp.person_id = p.person_id
+      GROUP BY c.crime_id, c.crime_type, c.date, c.status, l.city
+      ORDER BY c.date DESC
+      LIMIT 5
+    `);
     res.json(rows);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });

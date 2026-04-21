@@ -3,13 +3,14 @@ import toast from 'react-hot-toast'
 import api from '../api'
 import Modal from '../components/Modal'
 import ConfirmDialog from '../components/ConfirmDialog'
-import { statusBadge, fmtDate, CRIME_TYPES, CRIME_STATUSES } from '../utils'
+import { statusBadge, fmtDate, CRIME_TYPES, CRIME_STATUSES, ROLES } from '../utils'
 
 const empty = { crime_type: 'Theft', date: '', time: '', location_id: '', description: '', status: 'Open' }
 
 export default function Crimes() {
   const [crimes, setCrimes] = useState([])
   const [locations, setLocations] = useState([])
+  const [persons, setPersons] = useState([])
   const [search, setSearch] = useState('')
   const [filterStatus, setFilterStatus] = useState('')
   const [filterType, setFilterType] = useState('')
@@ -19,9 +20,14 @@ export default function Crimes() {
   const [deleteId, setDeleteId] = useState(null)
   const [detail, setDetail] = useState(null)
 
+  // Issues #1 & #4: Track persons linked to the crime being added/edited
+  const [formPersons, setFormPersons] = useState([])    // [{person_id, name, role}] — working copy
+  const [origPersons, setOrigPersons] = useState([])    // snapshot at edit-open time for diffing
+
   const load = () => {
     api.get('/crimes').then(r => setCrimes(r.data)).catch(() => toast.error('Failed to load crimes'))
     api.get('/locations').then(r => setLocations(r.data)).catch(() => {})
+    api.get('/persons').then(r => setPersons(r.data)).catch(() => {})
   }
 
   useEffect(() => { load() }, [])
@@ -33,8 +39,28 @@ export default function Crimes() {
     return matchSearch && matchStatus && matchType
   })
 
-  const openAdd = () => { setForm(empty); setSelected(null); setModal('add') }
-  const openEdit = (c) => { setForm({ crime_type: c.crime_type, date: c.date?.split('T')[0] || '', time: c.time || '', location_id: c.location_id || '', description: c.description || '', status: c.status || 'Open' }); setSelected(c); setModal('edit') }
+  const openAdd = () => {
+    setForm(empty)
+    setSelected(null)
+    setFormPersons([])
+    setOrigPersons([])
+    setModal('add')
+  }
+
+  // Issue #4: Load existing Crime_Person links when editing
+  const openEdit = async (c) => {
+    setForm({ crime_type: c.crime_type, date: c.date?.split('T')[0] || '', time: c.time || '', location_id: c.location_id || '', description: c.description || '', status: c.status || 'Open' })
+    setSelected(c)
+    setFormPersons([])
+    setOrigPersons([])
+    setModal('edit')
+    try {
+      const r = await api.get(`/crimes/${c.crime_id}`)
+      const linked = (r.data.persons || []).map(p => ({ person_id: String(p.person_id), name: p.name, role: p.role }))
+      setFormPersons(linked)
+      setOrigPersons(linked)
+    } catch { /* keep empty */ }
+  }
 
   const openView = async (c) => {
     setSelected(c)
@@ -45,16 +71,80 @@ export default function Crimes() {
     } catch { setDetail(c) }
   }
 
+  // Add a blank person row to the form
+  const addPersonRow = () => {
+    setFormPersons(fp => [...fp, { person_id: '', name: '', role: 'Suspect' }])
+  }
+
+  const removePersonRow = (idx) => {
+    setFormPersons(fp => fp.filter((_, i) => i !== idx))
+  }
+
+  const updatePersonRow = (idx, field, value) => {
+    setFormPersons(fp => fp.map((p, i) => {
+      if (i !== idx) return p
+      if (field === 'person_id') {
+        const found = persons.find(px => String(px.person_id) === value)
+        return { ...p, person_id: value, name: found?.name || '' }
+      }
+      return { ...p, [field]: value }
+    }))
+  }
+
+  // Sync Crime_Person records after saving the crime
+  const syncPersons = async (crimeId) => {
+    const validNew = formPersons.filter(p => p.person_id)
+
+    if (modal === 'add') {
+      for (const p of validNew) {
+        try { await api.post('/crime-persons', { crime_id: crimeId, person_id: p.person_id, role: p.role }) } catch { /* ignore dup */ }
+      }
+    } else {
+      const origIds = origPersons.map(p => p.person_id)
+      const newIds = validNew.map(p => p.person_id)
+
+      // Remove persons no longer in the list
+      for (const orig of origPersons) {
+        if (!newIds.includes(orig.person_id)) {
+          try { await api.delete('/crime-persons', { data: { crime_id: crimeId, person_id: orig.person_id } }) } catch { /* ignore */ }
+        }
+      }
+      // Add newly linked persons
+      for (const np of validNew) {
+        if (!origIds.includes(np.person_id)) {
+          try { await api.post('/crime-persons', { crime_id: crimeId, person_id: np.person_id, role: np.role }) } catch { /* ignore */ }
+        }
+      }
+      // Update roles that changed
+      for (const np of validNew) {
+        const orig = origPersons.find(p => p.person_id === np.person_id)
+        if (orig && orig.role !== np.role) {
+          try { await api.put('/crime-persons', { crime_id: crimeId, person_id: np.person_id, role: np.role }) } catch { /* ignore */ }
+        }
+      }
+    }
+  }
+
   const handleSave = async () => {
     if (!form.crime_type || !form.date) return toast.error('Crime type and date are required')
+
+    // Validate no duplicate persons
+    const validPersons = formPersons.filter(p => p.person_id)
+    const uniqueIds = new Set(validPersons.map(p => p.person_id))
+    if (uniqueIds.size !== validPersons.length) return toast.error('A person cannot be added twice to the same crime')
+
     try {
+      let crimeId
       if (modal === 'add') {
-        await api.post('/crimes', form)
+        const r = await api.post('/crimes', form)
+        crimeId = r.data.crime_id
         toast.success('Crime record added')
       } else {
         await api.put(`/crimes/${selected.crime_id}`, form)
+        crimeId = selected.crime_id
         toast.success('Crime record updated')
       }
+      await syncPersons(crimeId)
       setModal(null); load()
     } catch (e) { toast.error(e.response?.data?.error || 'Operation failed') }
   }
@@ -65,6 +155,12 @@ export default function Crimes() {
       toast.success('Deleted')
       setDeleteId(null); load()
     } catch (e) { toast.error(e.response?.data?.error || 'Delete failed') }
+  }
+
+  const roleColor = (role) => {
+    if (role === 'Suspect') return 'bg-red-900/40 text-red-300'
+    if (role === 'Victim') return 'bg-blue-900/40 text-blue-300'
+    return 'bg-green-900/40 text-green-300'
   }
 
   return (
@@ -130,7 +226,7 @@ export default function Crimes() {
 
       {/* Add/Edit Modal */}
       {(modal === 'add' || modal === 'edit') && (
-        <Modal title={modal === 'add' ? 'Add Crime Record' : 'Edit Crime Record'} onClose={() => setModal(null)}>
+        <Modal title={modal === 'add' ? 'Add Crime Record' : 'Edit Crime Record'} onClose={() => setModal(null)} wide>
           <div className="space-y-4">
             <div>
               <label className="form-label">Crime Type *</label>
@@ -165,6 +261,51 @@ export default function Crimes() {
               <label className="form-label">Description</label>
               <textarea rows={3} className="form-input resize-none" value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Describe the incident..." />
             </div>
+
+            {/* Issues #1 & #4: Persons Involved */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <label className="form-label mb-0">Persons Involved</label>
+                <button onClick={addPersonRow} className="text-xs px-2.5 py-1 bg-accent-500/10 hover:bg-accent-500/20 text-accent-400 rounded-lg border border-accent-500/30 transition-colors cursor-pointer">
+                  + Add Person
+                </button>
+              </div>
+              {formPersons.length === 0 && (
+                <p className="text-xs text-slate-600 italic py-2">No persons linked yet. Click "+ Add Person" to attach suspects, victims, or witnesses.</p>
+              )}
+              <div className="space-y-2">
+                {formPersons.map((fp, idx) => (
+                  <div key={idx} className="flex gap-2 items-center">
+                    <select
+                      className="form-input flex-1"
+                      value={fp.person_id}
+                      onChange={e => updatePersonRow(idx, 'person_id', e.target.value)}
+                    >
+                      <option value="">— Select Person —</option>
+                      {persons.map(p => (
+                        <option key={p.person_id} value={String(p.person_id)}>
+                          {p.name} {p.age ? `(${p.age}y)` : ''} · {p.gender || ''}
+                        </option>
+                      ))}
+                    </select>
+                    <select
+                      className="form-input w-32"
+                      value={fp.role}
+                      onChange={e => updatePersonRow(idx, 'role', e.target.value)}
+                    >
+                      {ROLES.map(r => <option key={r}>{r}</option>)}
+                    </select>
+                    <button
+                      onClick={() => removePersonRow(idx)}
+                      className="w-8 h-9 flex-shrink-0 rounded-lg bg-red-900/30 hover:bg-red-900/60 text-red-400 flex items-center justify-center text-sm transition-colors cursor-pointer"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+
             <div className="flex gap-3 pt-2">
               <button onClick={() => setModal(null)} className="btn-secondary flex-1 justify-center">Cancel</button>
               <button onClick={handleSave} className="btn-primary flex-1 justify-center">
@@ -202,16 +343,19 @@ export default function Crimes() {
             )}
             {detail?.persons?.length > 0 && (
               <div>
-                <p className="section-title text-base mb-3">Persons Involved</p>
+                <p className="section-title text-base mb-3">Persons Involved ({detail.persons.length})</p>
                 <div className="space-y-2">
                   {detail.persons.map((p, i) => (
                     <div key={i} className="flex items-center justify-between bg-navy-900 rounded-lg px-4 py-2.5">
                       <span className="text-sm text-slate-200">{p.name} <span className="text-slate-500 text-xs">· {p.gender}, {p.age}y</span></span>
-                      <span className="text-xs px-2 py-0.5 rounded bg-navy-700 text-slate-400">{p.role}</span>
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${roleColor(p.role)}`}>{p.role}</span>
                     </div>
                   ))}
                 </div>
               </div>
+            )}
+            {(!detail?.persons || detail.persons.length === 0) && (
+              <p className="text-sm text-slate-600 text-center py-2">No persons linked to this crime.</p>
             )}
             {detail?.cases?.length > 0 && (
               <div>

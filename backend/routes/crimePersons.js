@@ -19,6 +19,18 @@ router.post('/', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// Issue #5: Update a person's role in a crime (was missing entirely)
+router.put('/', async (req, res) => {
+  try {
+    const { crime_id, person_id, role } = req.body;
+    await pool.query(
+      'UPDATE Crime_Person SET role=? WHERE crime_id=? AND person_id=?',
+      [role, crime_id, person_id]
+    );
+    res.json({ message: 'Updated' });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 router.delete('/', async (req, res) => {
   try {
     const { crime_id, person_id } = req.body;

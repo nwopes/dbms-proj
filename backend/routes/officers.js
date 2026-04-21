@@ -47,7 +47,26 @@ router.put('/:id', async (req, res) => {
 
 router.delete('/:id', async (req, res) => {
   try {
-    await pool.query('DELETE FROM Police_Officer WHERE officer_id=?', [req.params.id]);
+    const id = req.params.id;
+
+    // Issue #13: Pre-check FK references and return a meaningful error message
+    const [[{ leadCases }]] = await pool.query(
+      "SELECT COUNT(*) as leadCases FROM Case_File WHERE lead_officer_id=? AND case_status != 'Closed'", [id]
+    );
+    const [[{ assignedCases }]] = await pool.query(
+      'SELECT COUNT(*) as assignedCases FROM Case_Officer WHERE officer_id=?', [id]
+    );
+
+    if (leadCases > 0 || assignedCases > 0) {
+      const parts = [];
+      if (leadCases > 0) parts.push(`lead officer on ${leadCases} open case${leadCases > 1 ? 's' : ''}`);
+      if (assignedCases > 0) parts.push(`assigned to ${assignedCases} case${assignedCases > 1 ? 's' : ''}`);
+      return res.status(409).json({
+        error: `Cannot delete: this officer is ${parts.join(' and ')}. Reassign or close those cases first.`
+      });
+    }
+
+    await pool.query('DELETE FROM Police_Officer WHERE officer_id=?', [id]);
     res.json({ message: 'Deleted' });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });

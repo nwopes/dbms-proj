@@ -179,6 +179,8 @@ export default function Dashboard() {
               <th className="table-header">Type</th>
               <th className="table-header">City</th>
               <th className="table-header">Date</th>
+              <th className="table-header">Suspects</th>
+              <th className="table-header">Victims</th>
               <th className="table-header">Status</th>
             </tr>
           </thead>
@@ -189,11 +191,21 @@ export default function Dashboard() {
                 <td className="table-cell font-medium">{r.crime_type}</td>
                 <td className="table-cell text-slate-400">{r.city}</td>
                 <td className="table-cell text-slate-400">{fmtDate(r.date)}</td>
+                <td className="table-cell">
+                  {r.suspects
+                    ? <span className="text-xs text-red-300 bg-red-900/30 px-2 py-0.5 rounded-full">{r.suspects}</span>
+                    : <span className="text-slate-600 text-xs">None identified</span>}
+                </td>
+                <td className="table-cell">
+                  {r.victims
+                    ? <span className="text-xs text-blue-300 bg-blue-900/30 px-2 py-0.5 rounded-full">{r.victims}</span>
+                    : <span className="text-slate-600 text-xs">—</span>}
+                </td>
                 <td className="table-cell"><span className={statusBadge(r.status)}>{r.status}</span></td>
               </tr>
             ))}
             {recent.length === 0 && (
-              <tr><td colSpan={5} className="table-cell text-center text-slate-600 py-8">No data</td></tr>
+              <tr><td colSpan={7} className="table-cell text-center text-slate-600 py-8">No data</td></tr>
             )}
           </tbody>
         </table>

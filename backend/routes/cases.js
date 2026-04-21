@@ -28,7 +28,11 @@ router.get('/:id', async (req, res) => {
        WHERE cf.case_id=?`, [req.params.id]
     );
     if (!row) return res.status(404).json({ error: 'Not found' });
-    const [officers] = await pool.query('SELECT po.name, po.designation, po.badge_number FROM Case_Officer co JOIN Police_Officer po ON co.officer_id=po.officer_id WHERE co.case_id=?', [req.params.id]);
+    // Include officer_id so the frontend can sync Case_Officer assignments
+    const [officers] = await pool.query(
+      'SELECT co.officer_id, po.name, po.designation, po.badge_number FROM Case_Officer co JOIN Police_Officer po ON co.officer_id=po.officer_id WHERE co.case_id=?',
+      [req.params.id]
+    );
     const [evidence] = await pool.query('SELECT * FROM Evidence WHERE case_id=?', [req.params.id]);
     const [court] = await pool.query('SELECT * FROM Court_Case WHERE case_id=?', [req.params.id]);
     res.json({ ...row, officers, evidence, court });
@@ -38,6 +42,15 @@ router.get('/:id', async (req, res) => {
 router.post('/', async (req, res) => {
   try {
     const { crime_id, lead_officer_id, case_status, start_date, end_date } = req.body;
+
+    // Issue #3: Warn if a case already exists for this crime
+    const [[existing]] = await pool.query('SELECT case_id FROM Case_File WHERE crime_id=? LIMIT 1', [crime_id]);
+    if (existing) {
+      return res.status(409).json({
+        error: `Crime #${crime_id} already has Case File #${existing.case_id}. A crime should only have one case file.`
+      });
+    }
+
     const [result] = await pool.query(
       'INSERT INTO Case_File (crime_id, lead_officer_id, case_status, start_date, end_date) VALUES (?,?,?,?,?)',
       [crime_id, lead_officer_id, case_status, start_date, end_date]
@@ -49,9 +62,15 @@ router.post('/', async (req, res) => {
 router.put('/:id', async (req, res) => {
   try {
     const { crime_id, lead_officer_id, case_status, start_date, end_date } = req.body;
+
+    // Issue #10: Validate end_date >= start_date server-side
+    if (end_date && start_date && end_date < start_date) {
+      return res.status(400).json({ error: 'End date cannot be before start date.' });
+    }
+
     await pool.query(
       'UPDATE Case_File SET crime_id=?, lead_officer_id=?, case_status=?, start_date=?, end_date=? WHERE case_id=?',
-      [crime_id, lead_officer_id, case_status, start_date, end_date, req.params.id]
+      [crime_id, lead_officer_id, case_status, start_date, end_date || null, req.params.id]
     );
     res.json({ message: 'Updated' });
   } catch (err) { res.status(500).json({ error: err.message }); }

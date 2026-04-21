@@ -40,7 +40,22 @@ router.put('/:id', async (req, res) => {
 
 router.delete('/:id', async (req, res) => {
   try {
-    await pool.query('DELETE FROM Person WHERE person_id=?', [req.params.id]);
+    const id = req.params.id;
+
+    // Issue #12: Pre-check FK references and return a meaningful error message
+    const [[{ crimeLinks }]] = await pool.query('SELECT COUNT(*) as crimeLinks FROM Crime_Person WHERE person_id=?', [id]);
+    const [[{ firLinks }]] = await pool.query('SELECT COUNT(*) as firLinks FROM FIR WHERE filed_by=?', [id]);
+
+    if (crimeLinks > 0 || firLinks > 0) {
+      const parts = [];
+      if (crimeLinks > 0) parts.push(`${crimeLinks} crime involvement record${crimeLinks > 1 ? 's' : ''}`);
+      if (firLinks > 0) parts.push(`${firLinks} FIR${firLinks > 1 ? 's' : ''}`);
+      return res.status(409).json({
+        error: `Cannot delete: this person is linked to ${parts.join(' and ')}. Remove those links first (via the Crime record's person list or the FIR page).`
+      });
+    }
+
+    await pool.query('DELETE FROM Person WHERE person_id=?', [id]);
     res.json({ message: 'Deleted' });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });

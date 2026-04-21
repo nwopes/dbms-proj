@@ -2,6 +2,8 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../db');
 
+const FINAL_VERDICTS = ['Guilty', 'Acquitted', 'Dismissed'];
+
 router.get('/', async (req, res) => {
   try {
     const [rows] = await pool.query(
@@ -34,6 +36,15 @@ router.post('/', async (req, res) => {
       'INSERT INTO Court_Case (case_id, court_name, verdict, hearing_date) VALUES (?,?,?,?)',
       [case_id, court_name, verdict, hearing_date]
     );
+
+    // Issue #7: Auto-close the linked Case File when verdict is final
+    if (FINAL_VERDICTS.includes(verdict)) {
+      await pool.query(
+        "UPDATE Case_File SET case_status='Closed', end_date=? WHERE case_id=? AND case_status != 'Closed'",
+        [hearing_date || new Date().toISOString().split('T')[0], case_id]
+      );
+    }
+
     res.json({ court_case_id: result.insertId });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -43,6 +54,15 @@ router.put('/:id', async (req, res) => {
     const { case_id, court_name, verdict, hearing_date } = req.body;
     await pool.query('UPDATE Court_Case SET case_id=?, court_name=?, verdict=?, hearing_date=? WHERE court_case_id=?',
       [case_id, court_name, verdict, hearing_date, req.params.id]);
+
+    // Issue #7: Auto-close the linked Case File when verdict becomes final
+    if (FINAL_VERDICTS.includes(verdict)) {
+      await pool.query(
+        "UPDATE Case_File SET case_status='Closed', end_date=? WHERE case_id=? AND case_status != 'Closed'",
+        [hearing_date || new Date().toISOString().split('T')[0], case_id]
+      );
+    }
+
     res.json({ message: 'Updated' });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });

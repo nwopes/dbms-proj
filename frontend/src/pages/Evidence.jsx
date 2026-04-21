@@ -6,6 +6,7 @@ import ConfirmDialog from '../components/ConfirmDialog'
 import { fmtDate, EVIDENCE_TYPES, evidenceColor, evidenceBadgeColor } from '../utils'
 
 const empty = { case_id: '', evidence_type: 'CCTV Footage', description: '', collected_date: '' }
+
 const typeIcons = { 'CCTV Footage': '📹', 'Weapon': '🔪', 'DNA': '🧬', 'Digital Evidence': '💾', 'Witness Statement': '📋', 'Document': '📄', 'Fingerprint': '👆', 'Other': '◆' }
 
 export default function Evidence() {
@@ -32,8 +33,18 @@ export default function Evidence() {
     setSelected(e); setModal('edit')
   }
 
+  // Issue #8: Get the selected case's crime date for validation
+  const selectedCase = cases.find(c => String(c.case_id) === String(form.case_id))
+  const crimeDate = selectedCase?.crime_date?.split('T')[0] || null
+
   const handleSave = async () => {
     if (!form.case_id || !form.evidence_type) return toast.error('Case and type are required')
+
+    // Issue #8: Evidence cannot be collected before the crime occurred
+    if (crimeDate && form.collected_date && form.collected_date < crimeDate) {
+      return toast.error(`Collection date (${form.collected_date}) cannot be before the crime date (${crimeDate})`)
+    }
+
     try {
       if (modal === 'add') { await api.post('/evidence', form); toast.success('Evidence logged') }
       else { await api.put(`/evidence/${selected.evidence_id}`, form); toast.success('Evidence updated') }
@@ -135,7 +146,14 @@ export default function Evidence() {
                 {EVIDENCE_TYPES.map(t => <option key={t}>{t}</option>)}
               </select></div>
             <div><label className="form-label">Collection Date</label>
-              <input type="date" className="form-input" value={form.collected_date} onChange={e => setForm(f => ({ ...f, collected_date: e.target.value }))} /></div>
+              <input type="date" className="form-input" value={form.collected_date}
+                min={crimeDate || undefined}
+                onChange={e => setForm(f => ({ ...f, collected_date: e.target.value }))} />
+              {crimeDate && <p className="text-xs text-slate-500 mt-1">Crime occurred: <span className="text-slate-300 font-mono">{crimeDate}</span> — evidence must be collected on or after this date.</p>}
+              {crimeDate && form.collected_date && form.collected_date < crimeDate && (
+                <p className="text-xs text-red-400 mt-1">Collection date cannot be before the crime date ({crimeDate})</p>
+              )}
+            </div>
             <div><label className="form-label">Description</label>
               <textarea rows={3} className="form-input resize-none" value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Describe the evidence..." /></div>
             <div className="flex gap-3 pt-2">

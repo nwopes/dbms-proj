@@ -48,7 +48,7 @@ export default function AuditLog() {
 
   useEffect(() => { load() }, [load])
 
-  const tables = ['Crime', 'Case_File', 'FIR', 'Evidence', 'Police_Officer', 'Court_Case']
+  const tables = ['Crime', 'Case_File', 'FIR', 'Evidence', 'Police_Officer', 'Court_Case', 'Crime_Person']
   const ops = ['INSERT', 'UPDATE', 'DELETE']
 
   const stats = {

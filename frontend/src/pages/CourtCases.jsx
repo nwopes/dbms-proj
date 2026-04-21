@@ -3,9 +3,10 @@ import toast from 'react-hot-toast'
 import api from '../api'
 import Modal from '../components/Modal'
 import ConfirmDialog from '../components/ConfirmDialog'
-import { fmtDate, statusBadge, VERDICT_OPTIONS } from '../utils'
+import { fmtDate, VERDICT_OPTIONS, statusBadge } from '../utils'
 
 const empty = { case_id: '', court_name: '', verdict: 'Pending', hearing_date: '' }
+const FINAL_VERDICTS = ['Guilty', 'Acquitted', 'Dismissed']
 
 export default function CourtCases() {
   const [courtCases, setCourtCases] = useState([])
@@ -30,11 +31,32 @@ export default function CourtCases() {
     setSelected(c); setModal('edit')
   }
 
+  // Issue #11: Get selected case's start date for validation
+  const selectedCase = cases.find(c => String(c.case_id) === String(form.case_id))
+  const caseStartDate = selectedCase?.start_date?.split('T')[0] || null
+
   const handleSave = async () => {
     if (!form.case_id || !form.court_name) return toast.error('Case and court name are required')
+
+    // Issue #11: Hearing date must be on or after case start date
+    if (caseStartDate && form.hearing_date && form.hearing_date < caseStartDate) {
+      return toast.error(`Hearing date cannot be before the case start date (${caseStartDate})`)
+    }
+
     try {
-      if (modal === 'add') { await api.post('/court-cases', form); toast.success('Court case added') }
-      else { await api.put(`/court-cases/${selected.court_case_id}`, form); toast.success('Updated') }
+      if (modal === 'add') {
+        await api.post('/court-cases', form)
+        toast.success('Court case added')
+      } else {
+        await api.put(`/court-cases/${selected.court_case_id}`, form)
+        toast.success('Updated')
+      }
+
+      // Issue #7: Notify user if linked case was auto-closed
+      if (FINAL_VERDICTS.includes(form.verdict)) {
+        toast.success(`Verdict "${form.verdict}" recorded — linked case file has been automatically closed.`, { duration: 4000 })
+      }
+
       setModal(null); load()
     } catch (e) { toast.error(e.response?.data?.error || 'Operation failed') }
   }
@@ -105,6 +127,9 @@ export default function CourtCases() {
                 <option value="">— Select Case —</option>
                 {cases.map(c => <option key={c.case_id} value={c.case_id}>Case #{c.case_id} · {c.crime_type} · {c.case_status}</option>)}
               </select>
+              {caseStartDate && (
+                <p className="text-xs text-slate-500 mt-1">Case opened: <span className="text-slate-300 font-mono">{caseStartDate}</span> — hearing must be on or after this date.</p>
+              )}
             </div>
             <div>
               <label className="form-label">Court Name *</label>
@@ -115,10 +140,20 @@ export default function CourtCases() {
               <select className="form-input" value={form.verdict} onChange={e => setForm(f => ({ ...f, verdict: e.target.value }))}>
                 {VERDICT_OPTIONS.map(v => <option key={v}>{v}</option>)}
               </select>
+              {/* Issue #7: Warn that a final verdict will auto-close the case */}
+              {FINAL_VERDICTS.includes(form.verdict) && (
+                <p className="text-xs text-amber-400 mt-1">⚠ Setting this verdict will automatically close the linked Case File.</p>
+              )}
             </div>
             <div>
               <label className="form-label">Hearing Date</label>
-              <input type="date" className="form-input" value={form.hearing_date} onChange={e => setForm(f => ({ ...f, hearing_date: e.target.value }))} />
+              {/* Issue #11: min date is case start date */}
+              <input type="date" className="form-input" value={form.hearing_date}
+                min={caseStartDate || undefined}
+                onChange={e => setForm(f => ({ ...f, hearing_date: e.target.value }))} />
+              {form.hearing_date && caseStartDate && form.hearing_date < caseStartDate && (
+                <p className="text-xs text-red-400 mt-1">Hearing date cannot be before the case start date ({caseStartDate})</p>
+              )}
             </div>
             <div className="flex gap-3 pt-2">
               <button onClick={() => setModal(null)} className="btn-secondary flex-1 justify-center">Cancel</button>

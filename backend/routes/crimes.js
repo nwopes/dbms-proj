@@ -15,7 +15,11 @@ router.get('/:id', async (req, res) => {
   try {
     const [[row]] = await pool.query('SELECT c.*, l.city, l.address FROM Crime c LEFT JOIN Location l ON c.location_id=l.location_id WHERE c.crime_id=?', [req.params.id]);
     if (!row) return res.status(404).json({ error: 'Not found' });
-    const [persons] = await pool.query('SELECT cp.role, p.name, p.age, p.gender FROM Crime_Person cp JOIN Person p ON cp.person_id=p.person_id WHERE cp.crime_id=?', [req.params.id]);
+    // Include person_id so the frontend can diff and sync Crime_Person links
+    const [persons] = await pool.query(
+      'SELECT cp.crime_id, cp.person_id, cp.role, p.name, p.age, p.gender FROM Crime_Person cp JOIN Person p ON cp.person_id=p.person_id WHERE cp.crime_id=?',
+      [req.params.id]
+    );
     const [cases] = await pool.query('SELECT cf.case_id, cf.case_status, po.name as lead_officer FROM Case_File cf LEFT JOIN Police_Officer po ON cf.lead_officer_id=po.officer_id WHERE cf.crime_id=?', [req.params.id]);
     res.json({ ...row, persons, cases });
   } catch (err) { res.status(500).json({ error: err.message }); }
