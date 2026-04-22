@@ -1,6 +1,6 @@
 import { MapContainer, TileLayer, CircleMarker, Popup } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import api from '../api';
 
 export default function CrimeMap() {
@@ -10,6 +10,12 @@ export default function CrimeMap() {
     api.get('/dashboard/locations-geospatial')
       .then(res => setLocations(res.data))
       .catch(console.error);
+      
+    // Fix Leaflet's infamous "grey tile" bug when rendered inside dynamic grid containers
+    const timer = setTimeout(() => {
+      window.dispatchEvent(new Event('resize'));
+    }, 400);
+    return () => clearTimeout(timer);
   }, []);
 
   return (
@@ -30,7 +36,7 @@ export default function CrimeMap() {
           {locations.map((loc, idx) => (
             <CircleMarker
               key={idx}
-              center={[loc.latitude, loc.longitude]}
+              center={[Number(loc.latitude) || 0, Number(loc.longitude) || 0]}
               pathOptions={{
                 color: '#ef4444',
                 fillColor: '#ef4444',
