@@ -13,8 +13,8 @@ router.get('/', async (req, res) => {
 
 router.post('/', async (req, res) => {
   try {
-    const { case_id, officer_id } = req.body;
-    await pool.query('INSERT INTO Case_Officer (case_id, officer_id) VALUES (?,?)', [case_id, officer_id]);
+    const { case_id, officer_id, role } = req.body;
+    await pool.query('INSERT INTO Case_Officer (case_id, officer_id, role) VALUES (?,?,?)', [case_id, officer_id, role || 'Investigator']);
     res.json({ message: 'Created' });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });

@@ -5,12 +5,13 @@ import Modal from '../components/Modal'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { fmtDate } from '../utils'
 
-const empty = { crime_id: '', filed_by: '', filing_date: '', description: '' }
+const empty = { crime_id: '', filer_type: 'person', filed_by_person: '', filed_by_officer: '', filing_date: '', description: '' }
 
 export default function FIRs() {
   const [firs, setFirs] = useState([])
   const [crimes, setCrimes] = useState([])
   const [persons, setPersons] = useState([])
+  const [officers, setOfficers] = useState([])
   const [modal, setModal] = useState(null)
   const [selected, setSelected] = useState(null)
   const [form, setForm] = useState(empty)
@@ -20,12 +21,20 @@ export default function FIRs() {
     api.get('/firs').then(r => setFirs(r.data)).catch(() => toast.error('Failed to load FIRs'))
     api.get('/crimes').then(r => setCrimes(r.data)).catch(() => {})
     api.get('/persons').then(r => setPersons(r.data)).catch(() => {})
+    api.get('/officers').then(r => setOfficers(r.data)).catch(() => {})
   }
   useEffect(() => { load() }, [])
 
   const openAdd = () => { setForm(empty); setSelected(null); setModal('add') }
   const openEdit = (f) => {
-    setForm({ crime_id: f.crime_id, filed_by: f.filed_by, filing_date: f.filing_date?.split('T')[0] || '', description: f.description || '' })
+    setForm({ 
+      crime_id: f.crime_id, 
+      filer_type: f.filed_by_officer ? 'officer' : 'person',
+      filed_by_person: f.filed_by_person || '', 
+      filed_by_officer: f.filed_by_officer || '',
+      filing_date: f.filing_date?.split('T')[0] || '', 
+      description: f.description || '' 
+    })
     setSelected(f); setModal('edit')
   }
   const openView = (f) => { setSelected(f); setModal('view') }
@@ -35,7 +44,10 @@ export default function FIRs() {
   const crimeDate = selectedCrime?.date?.split('T')[0] || null
 
   const handleSave = async () => {
-    if (!form.crime_id || !form.filed_by || !form.filing_date) return toast.error('Crime, person, and date are required')
+    const isPerson = form.filer_type === 'person';
+    if (!form.crime_id || (isPerson ? !form.filed_by_person : !form.filed_by_officer) || !form.filing_date) {
+      return toast.error('Crime, filer, and date are required')
+    }
 
     // Issue #9: FIR filing date must be on or after the crime date
     if (crimeDate && form.filing_date < crimeDate) {
@@ -43,8 +55,15 @@ export default function FIRs() {
     }
 
     try {
-      if (modal === 'add') { await api.post('/firs', form); toast.success('FIR filed') }
-      else { await api.put(`/firs/${selected.fir_id}`, form); toast.success('FIR updated') }
+      const payload = {
+        crime_id: form.crime_id,
+        filed_by_person: isPerson ? form.filed_by_person : null,
+        filed_by_officer: !isPerson ? form.filed_by_officer : null,
+        filing_date: form.filing_date,
+        description: form.description
+      }
+      if (modal === 'add') { await api.post('/firs', payload); toast.success('FIR filed') }
+      else { await api.put(`/firs/${selected.fir_id}`, payload); toast.success('FIR updated') }
       setModal(null); load()
     } catch (e) { toast.error(e.response?.data?.error || 'Operation failed') }
   }
@@ -109,12 +128,28 @@ export default function FIRs() {
                 <p className="text-xs text-slate-500 mt-1">Crime occurred on: <span className="text-slate-300 font-mono">{crimeDate}</span> — FIR must be filed on or after this date.</p>
               )}
             </div>
-            <div>
-              <label className="form-label">Filed By *</label>
-              <select className="form-input" value={form.filed_by} onChange={e => setForm(f => ({ ...f, filed_by: e.target.value }))}>
-                <option value="">— Select Person —</option>
-                {persons.map(p => <option key={p.person_id} value={p.person_id}>{p.name} (ID: {p.person_id})</option>)}
-              </select>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="form-label">Filer Type *</label>
+                <select className="form-input" value={form.filer_type} onChange={e => setForm(f => ({ ...f, filer_type: e.target.value }))}>
+                  <option value="person">Civilian</option>
+                  <option value="officer">Police Officer</option>
+                </select>
+              </div>
+              <div>
+                <label className="form-label">Filed By *</label>
+                {form.filer_type === 'person' ? (
+                  <select className="form-input" value={form.filed_by_person} onChange={e => setForm(f => ({ ...f, filed_by_person: e.target.value }))}>
+                    <option value="">— Select Civilian —</option>
+                    {persons.map(p => <option key={p.person_id} value={p.person_id}>{p.name} (ID: {p.person_id})</option>)}
+                  </select>
+                ) : (
+                  <select className="form-input" value={form.filed_by_officer} onChange={e => setForm(f => ({ ...f, filed_by_officer: e.target.value }))}>
+                    <option value="">— Select Officer —</option>
+                    {officers.map(o => <option key={o.officer_id} value={o.officer_id}>{o.name} (Badge: {o.badge_number})</option>)}
+                  </select>
+                )}
+              </div>
             </div>
             <div>
               <label className="form-label">Filing Date *</label>

@@ -6,10 +6,11 @@ router.get('/', async (req, res) => {
   try {
     const [rows] = await pool.query(
       `SELECT cf.*, c.crime_type, c.date as crime_date, c.status as crime_status,
-       po.name as lead_officer_name, po.designation, l.city
+       po.name as lead_officer_name, po.designation, l.city, co.officer_id as lead_officer_id
        FROM Case_File cf
        LEFT JOIN Crime c ON cf.crime_id=c.crime_id
-       LEFT JOIN Police_Officer po ON cf.lead_officer_id=po.officer_id
+       LEFT JOIN Case_Officer co ON cf.case_id=co.case_id AND co.role='Lead'
+       LEFT JOIN Police_Officer po ON co.officer_id=po.officer_id
        LEFT JOIN Location l ON c.location_id=l.location_id
        ORDER BY cf.start_date DESC`
     );
@@ -20,10 +21,11 @@ router.get('/', async (req, res) => {
 router.get('/:id', async (req, res) => {
   try {
     const [[row]] = await pool.query(
-      `SELECT cf.*, c.crime_type, c.date as crime_date, po.name as lead_officer_name, l.city
+      `SELECT cf.*, c.crime_type, c.date as crime_date, po.name as lead_officer_name, l.city, co.officer_id as lead_officer_id
        FROM Case_File cf
        LEFT JOIN Crime c ON cf.crime_id=c.crime_id
-       LEFT JOIN Police_Officer po ON cf.lead_officer_id=po.officer_id
+       LEFT JOIN Case_Officer co ON cf.case_id=co.case_id AND co.role='Lead'
+       LEFT JOIN Police_Officer po ON co.officer_id=po.officer_id
        LEFT JOIN Location l ON c.location_id=l.location_id
        WHERE cf.case_id=?`, [req.params.id]
     );
@@ -52,10 +54,14 @@ router.post('/', async (req, res) => {
     }
 
     const [result] = await pool.query(
-      'INSERT INTO Case_File (crime_id, lead_officer_id, case_status, start_date, end_date) VALUES (?,?,?,?,?)',
-      [crime_id, lead_officer_id, case_status, start_date, end_date]
+      'INSERT INTO Case_File (crime_id, case_status, start_date, end_date) VALUES (?,?,?,?)',
+      [crime_id, case_status, start_date, end_date]
     );
-    res.json({ case_id: result.insertId });
+    const newCaseId = result.insertId;
+    if (lead_officer_id) {
+       await pool.query('INSERT INTO Case_Officer (case_id, officer_id, role) VALUES (?,?,?)', [newCaseId, lead_officer_id, 'Lead']);
+    }
+    res.json({ case_id: newCaseId });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -69,9 +75,19 @@ router.put('/:id', async (req, res) => {
     }
 
     await pool.query(
-      'UPDATE Case_File SET crime_id=?, lead_officer_id=?, case_status=?, start_date=?, end_date=? WHERE case_id=?',
-      [crime_id, lead_officer_id, case_status, start_date, end_date || null, req.params.id]
+      'UPDATE Case_File SET crime_id=?, case_status=?, start_date=?, end_date=? WHERE case_id=?',
+      [crime_id, case_status, start_date, end_date || null, req.params.id]
     );
+    if (lead_officer_id) {
+      const [[existingLead]] = await pool.query('SELECT officer_id FROM Case_Officer WHERE case_id=? AND role="Lead"', [req.params.id]);
+      if (existingLead) {
+        if (existingLead.officer_id != lead_officer_id) {
+           await pool.query('UPDATE Case_Officer SET officer_id=? WHERE case_id=? AND role="Lead"', [lead_officer_id, req.params.id]);
+        }
+      } else {
+        await pool.query('INSERT INTO Case_Officer (case_id, officer_id, role) VALUES (?,?,?)', [req.params.id, lead_officer_id, 'Lead']);
+      }
+    }
     res.json({ message: 'Updated' });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });

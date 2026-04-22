@@ -31,7 +31,8 @@ CREATE TABLE Person (
   age          INT,
   gender       VARCHAR(10),
   phone_number VARCHAR(15),
-  address      VARCHAR(255)
+  location_id  INT,
+  FOREIGN KEY (location_id) REFERENCES Location(location_id)
 );
 
 CREATE TABLE Police_Station (
@@ -66,12 +67,10 @@ CREATE TABLE Crime (
 CREATE TABLE Case_File (
   case_id        INT PRIMARY KEY AUTO_INCREMENT,
   crime_id       INT,
-  lead_officer_id INT,
-  case_status    VARCHAR(50),
+    case_status    VARCHAR(50),
   start_date     DATE,
   end_date       DATE,
-  FOREIGN KEY (crime_id)        REFERENCES Crime(crime_id),
-  FOREIGN KEY (lead_officer_id) REFERENCES Police_Officer(officer_id)
+  FOREIGN KEY (crime_id)        REFERENCES Crime(crime_id)
 );
 
 CREATE TABLE Court_Case (
@@ -86,11 +85,13 @@ CREATE TABLE Court_Case (
 CREATE TABLE FIR (
   fir_id        INT  PRIMARY KEY AUTO_INCREMENT,
   crime_id      INT,
-  filed_by      INT,
-  filing_date   DATE NOT NULL,
-  description   TEXT,
-  FOREIGN KEY (crime_id)  REFERENCES Crime(crime_id),
-  FOREIGN KEY (filed_by)  REFERENCES Person(person_id)
+  filed_by_person  INT,
+  filed_by_officer INT,
+  filing_date      DATE NOT NULL,
+  description      TEXT,
+  FOREIGN KEY (crime_id)         REFERENCES Crime(crime_id),
+  FOREIGN KEY (filed_by_person)  REFERENCES Person(person_id),
+  FOREIGN KEY (filed_by_officer) REFERENCES Police_Officer(officer_id)
 );
 
 CREATE TABLE Evidence (
@@ -108,6 +109,7 @@ CREATE TABLE Evidence (
 CREATE TABLE Case_Officer (
   case_id    INT,
   officer_id INT,
+  role       VARCHAR(50) DEFAULT 'Investigator',
   PRIMARY KEY (case_id, officer_id),
   FOREIGN KEY (case_id)    REFERENCES Case_File(case_id),
   FOREIGN KEY (officer_id) REFERENCES Police_Officer(officer_id)
@@ -117,7 +119,7 @@ CREATE TABLE Crime_Person (
   crime_id   INT,
   person_id  INT,
   role       VARCHAR(20),
-  PRIMARY KEY (crime_id, person_id),
+  PRIMARY KEY (crime_id, person_id, role),
   FOREIGN KEY (crime_id)  REFERENCES Crime(crime_id),
   FOREIGN KEY (person_id) REFERENCES Person(person_id)
 );
@@ -162,15 +164,18 @@ CREATE VIEW vw_case_details AS
          cf.case_status, cf.start_date, cf.end_date, l.city
   FROM Case_File cf
   JOIN Crime c ON cf.crime_id = c.crime_id
-  JOIN Police_Officer po ON cf.lead_officer_id = po.officer_id
+  LEFT JOIN Case_Officer co ON cf.case_id = co.case_id AND co.role = 'Lead'
+  LEFT JOIN Police_Officer po ON co.officer_id = po.officer_id
   JOIN Location l ON c.location_id = l.location_id;
 
 CREATE VIEW vw_fir_details AS
-  SELECT f.fir_id, c.crime_type, p.name AS filed_by_name,
+  SELECT f.fir_id, c.crime_type, 
+         COALESCE(p.name, po.name) AS filed_by_name,
          f.filing_date, f.description
   FROM FIR f
   JOIN Crime c ON f.crime_id = c.crime_id
-  JOIN Person p ON f.filed_by = p.person_id;
+  LEFT JOIN Person p ON f.filed_by_person = p.person_id
+  LEFT JOIN Police_Officer po ON f.filed_by_officer = po.officer_id;
 
 CREATE VIEW vw_suspect_list AS
   SELECT cp.crime_id, c.crime_type, c.date, c.status,
@@ -193,7 +198,8 @@ BEGIN
          cf.case_status, cf.start_date, l.city AS location
   FROM Case_File cf
   JOIN Crime c ON cf.crime_id = c.crime_id
-  JOIN Police_Officer po ON cf.lead_officer_id = po.officer_id
+  LEFT JOIN Case_Officer co ON cf.case_id = co.case_id AND co.role = 'Lead'
+  LEFT JOIN Police_Officer po ON co.officer_id = po.officer_id
   JOIN Location l ON c.location_id = l.location_id
   WHERE cf.case_id = p_case_id;
 
@@ -277,26 +283,26 @@ INSERT INTO Location VALUES
 -- Persons (20 rows -- India-specific names and addresses)
 -- ============================================================
 INSERT INTO Person VALUES
-(1,  'Aarav Sharma',   28, 'Male',   '9876501234', '14 Lajpat Nagar, New Delhi'),
-(2,  'Priya Sundar',   32, 'Female', '9867234510', '7-B Andheri West, Mumbai'),
-(3,  'Karthik Raja',   41, 'Male',   '9845612340', '22 Jayanagar 4th Block, Bengaluru'),
-(4,  'Meghna Pillai',  27, 'Female', '9878901234', '45 T Nagar, Chennai'),
-(5,  'Gurpreet Singh', 55, 'Male',   '9812234567', '3 Sector 22, Chandigarh'),
-(6,  'Nazia Fatima',   30, 'Female', '9901234567', '88 Kaiser Bagh, Lucknow'),
-(7,  'Venkat Rao',     48, 'Male',   '9800123456', '12 Madhapur, Hyderabad'),
-(8,  'Subhas Mondal',  38, 'Male',   '9811234560', '5 Ballygunge Place, Kolkata'),
-(9,  'Shweta Pawar',   26, 'Female', '9822345671', '9 Viman Nagar, Pune'),
-(10, 'Jayesh Patel',   44, 'Male',   '9833456782', '17 Navrangpura, Ahmedabad'),
-(11, 'Kavita Sharma',  35, 'Female', '9844567893', '6 Vaishali Nagar, Jaipur'),
-(12, 'Rohit Nair',     29, 'Male',   '9855678904', '33 Jubilee Hills, Hyderabad'),
-(13, 'Sunita Mishra',  42, 'Female', '9866789015', '14 Indiranagar, Bengaluru'),
-(14, 'Arif Khan',      37, 'Male',   '9877890126', '21 Malad East, Mumbai'),
-(15, 'Pooja Verma',    24, 'Female', '9888901237', '3 Saket, New Delhi'),
-(16, 'Dinesh Kumar',   52, 'Male',   '9899012348', '8 Uttam Nagar, New Delhi'),
-(17, 'Lakshmi Devi',   46, 'Female', '9810123459', '19 Amjikarai, Chennai'),
-(18, 'Aditya Bose',    31, 'Male',   '9821234560', '7 Jadavpur, Kolkata'),
-(19, 'Renu Singh',     39, 'Female', '9832345671', '25 Gomti Nagar, Lucknow'),
-(20, 'Farhan Sheikh',  33, 'Male',   '9843456782', '11 Bandra West, Mumbai');
+(1,  'Aarav Sharma',   28, 'Male',   '9876501234', 2),
+(2,  'Priya Sundar',   32, 'Female', '9867234510', 3),
+(3,  'Karthik Raja',   41, 'Male',   '9845612340', 4),
+(4,  'Meghna Pillai',  27, 'Female', '9878901234', 5),
+(5,  'Gurpreet Singh', 55, 'Male',   '9812234567', 6),
+(6,  'Nazia Fatima',   30, 'Female', '9901234567', 7),
+(7,  'Venkat Rao',     48, 'Male',   '9800123456', 8),
+(8,  'Subhas Mondal',  38, 'Male',   '9811234560', 9),
+(9,  'Shweta Pawar',   26, 'Female', '9822345671', 10),
+(10, 'Jayesh Patel',   44, 'Male',   '9833456782', 11),
+(11, 'Kavita Sharma',  35, 'Female', '9844567893', 12),
+(12, 'Rohit Nair',     29, 'Male',   '9855678904', 13),
+(13, 'Sunita Mishra',  42, 'Female', '9866789015', 14),
+(14, 'Arif Khan',      37, 'Male',   '9877890126', 15),
+(15, 'Pooja Verma',    24, 'Female', '9888901237', 1),
+(16, 'Dinesh Kumar',   52, 'Male',   '9899012348', 2),
+(17, 'Lakshmi Devi',   46, 'Female', '9810123459', 3),
+(18, 'Aditya Bose',    31, 'Male',   '9821234560', 4),
+(19, 'Renu Singh',     39, 'Female', '9832345671', 5),
+(20, 'Farhan Sheikh',  33, 'Male',   '9843456782', 6);
 
 -- ============================================================
 -- Police Stations (10 rows)
@@ -368,50 +374,50 @@ INSERT INTO Crime VALUES
 -- Note: No trigger active during this insert -- inserted manually
 -- ============================================================
 INSERT INTO Case_File VALUES
-(1,  1,  12, 'Open',              '2024-01-21', NULL),
-(2,  2,  2,  'Closed',            '2024-02-12', '2024-04-20'),
-(3,  3,  3,  'Under Investigation','2024-03-08', NULL),
-(4,  4,  4,  'Under Investigation','2024-04-13', NULL),
-(5,  5,  14, 'Open',              '2024-05-16', NULL),
-(6,  6,  6,  'Closed',            '2024-06-04', '2024-08-15'),
-(7,  7,  13, 'Open',              '2024-06-23', NULL),
-(8,  8,  11, 'Under Investigation','2024-07-10', NULL),
-(9,  9,  8,  'Closed',            '2024-07-26', '2024-09-10'),
-(10, 10, 10, 'Under Investigation','2024-08-17', NULL),
-(11, 11, 1,  'Open',              '2024-09-04', NULL),
-(12, 12, 2,  'Closed',            '2024-09-19', '2024-11-05'),
-(13, 13, 3,  'Under Investigation','2024-10-06', NULL),
-(14, 14, 13, 'Open',              '2024-10-22', NULL),
-(15, 15, 5,  'Closed',            '2024-11-09', '2025-01-20'),
-(16, 16, 1,  'Open',              '2024-11-23', NULL),
-(17, 17, 2,  'Under Investigation','2024-12-05', NULL),
-(18, 18, 9,  'Open',              '2024-12-20', NULL),
-(19, 19, 8,  'Under Investigation','2025-01-11', NULL),
-(20, 20, 4,  'Open',              '2025-01-26', NULL),
-(21, 21, 7,  'Under Investigation','2025-02-09', NULL),
-(22, 22, 6,  'Open',              '2025-02-21', NULL),
-(23, 24, 14, 'Closed',            '2025-03-19', '2025-04-10'),
-(24, 25, 5,  'Open',              '2025-04-02', NULL);
+(1, 1, 'Open', '2024-01-21', NULL),
+(2, 2, 'Closed', '2024-02-12', '2024-04-20'),
+(3, 3, 'Under Investigation', '2024-03-08', NULL),
+(4, 4, 'Under Investigation', '2024-04-13', NULL),
+(5, 5, 'Open', '2024-05-16', NULL),
+(6, 6, 'Closed', '2024-06-04', '2024-08-15'),
+(7, 7, 'Open', '2024-06-23', NULL),
+(8, 8, 'Under Investigation', '2024-07-10', NULL),
+(9, 9, 'Closed', '2024-07-26', '2024-09-10'),
+(10, 10, 'Under Investigation', '2024-08-17', NULL),
+(11, 11, 'Open', '2024-09-04', NULL),
+(12, 12, 'Closed', '2024-09-19', '2024-11-05'),
+(13, 13, 'Under Investigation', '2024-10-06', NULL),
+(14, 14, 'Open', '2024-10-22', NULL),
+(15, 15, 'Closed', '2024-11-09', '2025-01-20'),
+(16, 16, 'Open', '2024-11-23', NULL),
+(17, 17, 'Under Investigation', '2024-12-05', NULL),
+(18, 18, 'Open', '2024-12-20', NULL),
+(19, 19, 'Under Investigation', '2025-01-11', NULL),
+(20, 20, 'Open', '2025-01-26', NULL),
+(21, 21, 'Under Investigation', '2025-02-09', NULL),
+(22, 22, 'Open', '2025-02-21', NULL),
+(23, 24, 'Closed', '2025-03-19', '2025-04-10'),
+(24, 25, 'Open', '2025-04-02', NULL);
 
 -- ============================================================
 -- FIRs (15 rows -- filing dates on or after crime dates)
 -- ============================================================
 INSERT INTO FIR VALUES
-(1,  1,  1,  '2024-01-20', 'Apple MacBook Pro (Silver, 13-inch M2) stolen from Barista, Connaught Place. Complainant Aarav Sharma stepped away for 5 minutes. Device last seen on table near window seat.'),
-(2,  2,  20, '2024-02-11', 'Complainant Farhan Sheikh witnessed two helmeted men rob SBI ATM at knifepoint. Approximately Rs 2.8 lakh taken. Witness threatened not to call police.'),
-(3,  3,  3,  '2024-03-07', 'Karthik Raja filing on behalf of victim -- two men attacked a pedestrian with iron rods near Brigade Road metro exit over a parking space dispute.'),
-(4,  4,  4,  '2024-04-12', 'UPI fraud complaint by Meghna Pillai. Received call from impersonator claiming to be HDFC executive. Shared OTP and immediately saw Rs 3,20,000 debited.'),
-(5,  5,  5,  '2024-05-16', 'Body of unidentified male (approx. 35-45 years) discovered by Gurpreet Singh on morning walk in Leisure Valley Park. Head injuries consistent with blunt-force trauma. No identification on body.'),
-(6,  6,  6,  '2024-06-03', 'Complaint by Nazia Fatima -- daughter Ayesha (7 years) did not return from school. Unknown male seen waiting near school gate at 3:30 PM. Ransom call received at 6 PM demanding Rs 10 lakh.'),
-(7,  7,  7,  '2024-06-23', 'Venkat Rao reports Rs 1,82,000 debited from HDFC account after clicking link in email purporting to be from HDFC NetBanking. IP traced to VPN exit node in Singapore.'),
-(8,  8,  9,  '2024-07-09', 'Shweta Pawar reports Honda City (White, MH-12-AB-1234) stolen from gated society between 2 PM and 8 PM. Parking barrier camera wire was cut. Vehicle had ETC tag active.'),
-(9,  9,  8,  '2024-07-26', 'Subhas Mondal filing on behalf of spouse. Husband Ramesh Roy (35) assaulted wife with belt and slippers multiple times. Victim has medical certificate. Neighbour Mrs. Chatterjee witnessed shouting.'),
-(10, 10, 10, '2024-08-17', 'Jayesh Patel, owner of TBZ outlet CG Road, reports armed robbery at closing time. Four masked men with revolvers took 24 gold ornaments and Rs 3.8 lakh cash. Store CCTV partially operational.'),
-(11, 11, 15, '2024-09-03', 'Pooja Verma reports investment fraud. Paid Rs 8 lakh in three instalments to Jupiter Returns LLP for promised 30 percent monthly returns. Company office vacated by second month; phones switched off.'),
-(12, 12, 1,  '2024-09-18', 'Aarav Sharma reports mobile phone (iPhone 15 Pro, 256GB Natural Titanium) snatched at Nariman Point signal by pillion rider on KA-03 series motorcycle. Partial number plate noted.'),
-(13, 13, 13, '2024-10-06', 'Sunita Mishra, neighbour, reports body of Rajesh Gupta found at 4 AM. Blood pooled near kitchen. Multiple sharp-force wounds. Deceased had reported property dispute with cousin two weeks prior.'),
-(14, 14, 7,  '2024-10-21', 'Venkat Rao, CTO of TechSphere Solutions, reports detection of unauthorized data exfiltration. SQL injection fingerprints found in logs. Dark web listing of 52,000 customer records identified by cyber cell.'),
-(15, 15, 11, '2024-11-09', 'Kavita Sharma self-filing after release. Held for 3 days at undisclosed location. Rs 50 lakh ransom paid via hawala by family. Three distinct voices on ransom calls. WhatsApp screenshots preserved.');
+(1, 1, 1, NULL, '2024-01-20', 'Apple MacBook Pro (Silver, 13-inch M2) stolen from Barista, Connaught Place. Complainant Aarav Sharma stepped away for 5 minutes. Device last seen on table near window seat.'),
+(2, 2, 20, NULL, '2024-02-11', 'Complainant Farhan Sheikh witnessed two helmeted men rob SBI ATM at knifepoint. Approximately Rs 2.8 lakh taken. Witness threatened not to call police.'),
+(3, 3, 3, NULL, '2024-03-07', 'Karthik Raja filing on behalf of victim -- two men attacked a pedestrian with iron rods near Brigade Road metro exit over a parking space dispute.'),
+(4, 4, 4, NULL, '2024-04-12', 'UPI fraud complaint by Meghna Pillai. Received call from impersonator claiming to be HDFC executive. Shared OTP and immediately saw Rs 3,20,000 debited.'),
+(5, 5, 5, NULL, '2024-05-16', 'Body of unidentified male (approx. 35-45 years) discovered by Gurpreet Singh on morning walk in Leisure Valley Park. Head injuries consistent with blunt-force trauma. No identification on body.'),
+(6, 6, 6, NULL, '2024-06-03', 'Complaint by Nazia Fatima -- daughter Ayesha (7 years) did not return from school. Unknown male seen waiting near school gate at 3:30 PM. Ransom call received at 6 PM demanding Rs 10 lakh.'),
+(7, 7, 7, NULL, '2024-06-23', 'Venkat Rao reports Rs 1,82,000 debited from HDFC account after clicking link in email purporting to be from HDFC NetBanking. IP traced to VPN exit node in Singapore.'),
+(8, 8, 9, NULL, '2024-07-09', 'Shweta Pawar reports Honda City (White, MH-12-AB-1234) stolen from gated society between 2 PM and 8 PM. Parking barrier camera wire was cut. Vehicle had ETC tag active.'),
+(9, 9, 8, NULL, '2024-07-26', 'Subhas Mondal filing on behalf of spouse. Husband Ramesh Roy (35) assaulted wife with belt and slippers multiple times. Victim has medical certificate. Neighbour Mrs. Chatterjee witnessed shouting.'),
+(10, 10, 10, NULL, '2024-08-17', 'Jayesh Patel, owner of TBZ outlet CG Road, reports armed robbery at closing time. Four masked men with revolvers took 24 gold ornaments and Rs 3.8 lakh cash. Store CCTV partially operational.'),
+(11, 11, 15, NULL, '2024-09-03', 'Pooja Verma reports investment fraud. Paid Rs 8 lakh in three instalments to Jupiter Returns LLP for promised 30 percent monthly returns. Company office vacated by second month; phones switched off.'),
+(12, 12, 1,  NULL, '2024-09-18', 'Aarav Sharma reports mobile phone (iPhone 15 Pro, 256GB Natural Titanium) snatched at Nariman Point signal by pillion rider on KA-03 series motorcycle. Partial number plate noted.'),
+(13, 13, 13, NULL, '2024-10-06', 'Sunita Mishra, neighbour, reports body of Rajesh Gupta found at 4 AM. Blood pooled near kitchen. Multiple sharp-force wounds. Deceased had reported property dispute with cousin two weeks prior.'),
+(14, 14, 7,  NULL, '2024-10-21', 'Venkat Rao, CTO of TechSphere Solutions, reports detection of unauthorized data exfiltration. SQL injection fingerprints found in logs. Dark web listing of 52,000 customer records identified by cyber cell.'),
+(15, 15, 11, NULL, '2024-11-09', 'Kavita Sharma self-filing after release. Held for 3 days at undisclosed location. Rs 50 lakh ransom paid via hawala by family. Three distinct voices on ransom calls. WhatsApp screenshots preserved.');
 
 -- ============================================================
 -- Court Cases (8 rows -- India-specific court names)
@@ -485,30 +491,30 @@ INSERT INTO Crime_Person VALUES
 -- Case_Officer (30 rows -- officers assigned to cases)
 -- ============================================================
 INSERT INTO Case_Officer VALUES
-(1,  12), (1,  1),
-(2,  2),  (2,  3),
-(3,  3),  (3,  11),
-(4,  4),
-(5,  14), (5,  5),
-(6,  6),
-(7,  13), (7,  7),
-(8,  11), (8,  9),
-(9,  8),  (9,  15),
-(10, 10),
-(11, 1),  (11, 12),
-(12, 2),
-(13, 3),
-(14, 13), (14, 7),
-(15, 5),  (15, 14),
-(16, 1),
-(17, 2),  (17, 4),
-(18, 9),  (18, 11),
-(19, 8),
-(20, 4),
-(21, 7),  (21, 13),
-(22, 6),
-(23, 14), (23, 5),
-(24, 5);
+(1, 12, 'Lead'), (1, 1, 'Investigator'),
+(2, 2, 'Lead'),  (2, 3, 'Investigator'),
+(3, 3, 'Lead'),  (3, 11, 'Investigator'),
+(4, 4, 'Lead'),
+(5, 14, 'Lead'), (5, 5, 'Investigator'),
+(6, 6, 'Lead'),
+(7, 13, 'Lead'), (7, 7, 'Investigator'),
+(8, 11, 'Lead'), (8, 9, 'Investigator'),
+(9, 8, 'Lead'),  (9, 15, 'Investigator'),
+(10, 10, 'Lead'),
+(11, 1, 'Lead'),  (11, 12, 'Investigator'),
+(12, 2, 'Lead'),
+(13, 3, 'Lead'),
+(14, 13, 'Lead'), (14, 7, 'Investigator'),
+(15, 5, 'Lead'),  (15, 14, 'Investigator'),
+(16, 1, 'Lead'),
+(17, 2, 'Lead'),  (17, 4, 'Investigator'),
+(18, 9, 'Lead'),  (18, 11, 'Investigator'),
+(19, 8, 'Lead'),
+(20, 4, 'Lead'),
+(21, 7, 'Lead'),  (21, 13, 'Investigator'),
+(22, 6, 'Lead'),
+(23, 14, 'Lead'), (23, 5, 'Investigator'),
+(24, 5, 'Lead');
 
 -- ============================================================
 -- Audit_Log (75 rows -- backdated historical entries)
@@ -642,7 +648,7 @@ CREATE TRIGGER audit_case_insert
 BEGIN
     INSERT INTO Audit_Log (table_name, operation, record_id, details)
     VALUES ('Case_File', 'INSERT', NEW.case_id,
-        CONCAT('CrimeID:', NEW.crime_id, ' | Officer:', NEW.lead_officer_id,
+        CONCAT('CrimeID:', NEW.crime_id,
                ' | Status:', NEW.case_status));
 END //
 DELIMITER ;
@@ -676,7 +682,7 @@ CREATE TRIGGER audit_fir_insert
 BEGIN
     INSERT INTO Audit_Log (table_name, operation, record_id, details)
     VALUES ('FIR', 'INSERT', NEW.fir_id,
-        CONCAT('CrimeID:', NEW.crime_id, ' | FiledBy:', NEW.filed_by,
+        CONCAT('CrimeID:', NEW.crime_id, ' | FiledByPerson:', COALESCE(NEW.filed_by_person, 'N/A'),
                ' | Date:', NEW.filing_date));
 END //
 DELIMITER ;
@@ -688,7 +694,7 @@ CREATE TRIGGER audit_fir_update
 BEGIN
     INSERT INTO Audit_Log (table_name, operation, record_id, details)
     VALUES ('FIR', 'UPDATE', NEW.fir_id,
-        CONCAT('CrimeID:', NEW.crime_id, ' | FiledBy:', NEW.filed_by,
+        CONCAT('CrimeID:', NEW.crime_id, ' | FiledByPerson:', COALESCE(NEW.filed_by_person, 'N/A'),
                ' | Date:', NEW.filing_date));
 END //
 DELIMITER ;
@@ -819,4 +825,77 @@ BEGIN
     VALUES ('Crime_Person', 'DELETE', OLD.crime_id,
         CONCAT('PersonID:', OLD.person_id, ' | Role:', OLD.role, ' removed'));
 END //
+DELIMITER ;
+
+-- ============================================================
+-- TEMPORAL VALIDATION TRIGGERS
+-- ============================================================
+
+DELIMITER //
+
+CREATE TRIGGER before_case_insert
+    BEFORE INSERT ON Case_File FOR EACH ROW
+BEGIN
+    DECLARE v_crime_date DATE;
+    SELECT date INTO v_crime_date FROM Crime WHERE crime_id = NEW.crime_id;
+    IF NEW.start_date < v_crime_date THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Case start date cannot precede Crime date';
+    END IF;
+END //
+
+CREATE TRIGGER before_case_update
+    BEFORE UPDATE ON Case_File FOR EACH ROW
+BEGIN
+    DECLARE v_crime_date DATE;
+    SELECT date INTO v_crime_date FROM Crime WHERE crime_id = NEW.crime_id;
+    IF NEW.start_date < v_crime_date THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Case start date cannot precede Crime date';
+    END IF;
+    
+    -- Auto-close Crime if Case closes
+    IF NEW.case_status = 'Closed' AND OLD.case_status != 'Closed' THEN
+        UPDATE Crime SET status = 'Closed' WHERE crime_id = NEW.crime_id;
+    END IF;
+END //
+
+CREATE TRIGGER before_evidence_insert
+    BEFORE INSERT ON Evidence FOR EACH ROW
+BEGIN
+    DECLARE v_crime_date DATE;
+    SELECT c.date INTO v_crime_date FROM Case_File cf JOIN Crime c ON cf.crime_id = c.crime_id WHERE cf.case_id = NEW.case_id;
+    IF NEW.collected_date < v_crime_date THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Evidence collected date cannot precede Crime date';
+    END IF;
+END //
+
+CREATE TRIGGER before_evidence_update
+    BEFORE UPDATE ON Evidence FOR EACH ROW
+BEGIN
+    DECLARE v_crime_date DATE;
+    SELECT c.date INTO v_crime_date FROM Case_File cf JOIN Crime c ON cf.crime_id = c.crime_id WHERE cf.case_id = NEW.case_id;
+    IF NEW.collected_date < v_crime_date THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Evidence collected date cannot precede Crime date';
+    END IF;
+END //
+
+CREATE TRIGGER before_court_case_insert
+    BEFORE INSERT ON Court_Case FOR EACH ROW
+BEGIN
+    DECLARE v_case_start DATE;
+    SELECT start_date INTO v_case_start FROM Case_File WHERE case_id = NEW.case_id;
+    IF NEW.hearing_date < v_case_start THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Hearing date cannot precede Case start date';
+    END IF;
+END //
+
+CREATE TRIGGER before_court_case_update
+    BEFORE UPDATE ON Court_Case FOR EACH ROW
+BEGIN
+    DECLARE v_case_start DATE;
+    SELECT start_date INTO v_case_start FROM Case_File WHERE case_id = NEW.case_id;
+    IF NEW.hearing_date < v_case_start THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Hearing date cannot precede Case start date';
+    END IF;
+END //
+
 DELIMITER ;

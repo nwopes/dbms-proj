@@ -5,8 +5,10 @@ const pool = require('../db');
 router.get('/', async (req, res) => {
   try {
     const [rows] = await pool.query(
-      `SELECT f.*, c.crime_type, p.name as filed_by_name
-       FROM FIR f LEFT JOIN Crime c ON f.crime_id=c.crime_id LEFT JOIN Person p ON f.filed_by=p.person_id
+      `SELECT f.*, c.crime_type, COALESCE(p.name, po.name) as filed_by_name
+       FROM FIR f LEFT JOIN Crime c ON f.crime_id=c.crime_id 
+       LEFT JOIN Person p ON f.filed_by_person=p.person_id
+       LEFT JOIN Police_Officer po ON f.filed_by_officer=po.officer_id
        ORDER BY f.filing_date DESC`
     );
     res.json(rows);
@@ -16,8 +18,10 @@ router.get('/', async (req, res) => {
 router.get('/:id', async (req, res) => {
   try {
     const [[row]] = await pool.query(
-      `SELECT f.*, c.crime_type, p.name as filed_by_name FROM FIR f
-       LEFT JOIN Crime c ON f.crime_id=c.crime_id LEFT JOIN Person p ON f.filed_by=p.person_id
+      `SELECT f.*, c.crime_type, COALESCE(p.name, po.name) as filed_by_name FROM FIR f
+       LEFT JOIN Crime c ON f.crime_id=c.crime_id 
+       LEFT JOIN Person p ON f.filed_by_person=p.person_id
+       LEFT JOIN Police_Officer po ON f.filed_by_officer=po.officer_id
        WHERE f.fir_id=?`, [req.params.id]
     );
     if (!row) return res.status(404).json({ error: 'Not found' });
@@ -27,10 +31,10 @@ router.get('/:id', async (req, res) => {
 
 router.post('/', async (req, res) => {
   try {
-    const { crime_id, filed_by, filing_date, description } = req.body;
+    const { crime_id, filed_by_person, filed_by_officer, filing_date, description } = req.body;
     const [result] = await pool.query(
-      'INSERT INTO FIR (crime_id, filed_by, filing_date, description) VALUES (?,?,?,?)',
-      [crime_id, filed_by, filing_date, description]
+      'INSERT INTO FIR (crime_id, filed_by_person, filed_by_officer, filing_date, description) VALUES (?,?,?,?,?)',
+      [crime_id, filed_by_person || null, filed_by_officer || null, filing_date, description]
     );
     res.json({ fir_id: result.insertId });
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -38,9 +42,9 @@ router.post('/', async (req, res) => {
 
 router.put('/:id', async (req, res) => {
   try {
-    const { crime_id, filed_by, filing_date, description } = req.body;
-    await pool.query('UPDATE FIR SET crime_id=?, filed_by=?, filing_date=?, description=? WHERE fir_id=?',
-      [crime_id, filed_by, filing_date, description, req.params.id]);
+    const { crime_id, filed_by_person, filed_by_officer, filing_date, description } = req.body;
+    await pool.query('UPDATE FIR SET crime_id=?, filed_by_person=?, filed_by_officer=?, filing_date=?, description=? WHERE fir_id=?',
+      [crime_id, filed_by_person || null, filed_by_officer || null, filing_date, description, req.params.id]);
     res.json({ message: 'Updated' });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });

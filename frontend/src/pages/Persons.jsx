@@ -5,7 +5,7 @@ import Modal from '../components/Modal'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { fmtDate, GENDERS } from '../utils'
 
-const empty = { name: '', age: '', gender: 'Male', phone_number: '', address: '' }
+const empty = { name: '', age: '', gender: 'Male', phone_number: '', location_id: '' }
 
 const roleColor = (role) => {
   if (role === 'Victim') return 'bg-blue-900/40 text-blue-300'
@@ -16,6 +16,7 @@ const roleColor = (role) => {
 
 export default function Persons() {
   const [persons, setPersons] = useState([])
+  const [locations, setLocations] = useState([])
   const [modal, setModal] = useState(null)
   const [selected, setSelected] = useState(null)
   const [form, setForm] = useState(empty)
@@ -25,6 +26,7 @@ export default function Persons() {
 
   const load = () => {
     api.get('/persons').then(r => setPersons(r.data)).catch(() => toast.error('Failed to load persons'))
+    api.get('/locations').then(r => setLocations(r.data)).catch(() => {})
   }
   useEffect(() => { load() }, [])
 
@@ -34,7 +36,7 @@ export default function Persons() {
 
   const openAdd = () => { setForm(empty); setSelected(null); setModal('add') }
   const openEdit = (p) => {
-    setForm({ name: p.name, age: p.age || '', gender: p.gender || 'Male', phone_number: p.phone_number || '', address: p.address || '' })
+    setForm({ name: p.name, age: p.age || '', gender: p.gender || 'Male', phone_number: p.phone_number || '', location_id: p.location_id || '' })
     setSelected(p); setModal('edit')
   }
   const openView = async (p) => {
@@ -79,7 +81,7 @@ export default function Persons() {
               <th className="table-header">Age</th>
               <th className="table-header">Gender</th>
               <th className="table-header">Phone</th>
-              <th className="table-header">Address</th>
+              <th className="table-header">Location</th>
               <th className="table-header">Actions</th>
             </tr>
           </thead>
@@ -91,7 +93,7 @@ export default function Persons() {
                 <td className="table-cell text-slate-400">{p.age ?? '—'}</td>
                 <td className="table-cell text-slate-400">{p.gender || '—'}</td>
                 <td className="table-cell font-mono text-sm text-slate-400">{p.phone_number || '—'}</td>
-                <td className="table-cell text-slate-400 max-w-xs truncate">{p.address || '—'}</td>
+                <td className="table-cell text-slate-400 max-w-xs truncate">{p.city ? `${p.city} (${p.location_address})` : '—'}</td>
                 <td className="table-cell">
                   <div className="flex gap-2">
                     <button onClick={() => openView(p)} className="text-xs px-2.5 py-1 bg-navy-700 hover:bg-navy-750 text-slate-300 rounded-lg border border-navy-600 transition-colors cursor-pointer">View</button>
@@ -133,8 +135,11 @@ export default function Persons() {
               <input className="form-input font-mono" value={form.phone_number} onChange={e => setForm(f => ({ ...f, phone_number: e.target.value }))} placeholder="10-digit number" />
             </div>
             <div>
-              <label className="form-label">Address</label>
-              <textarea rows={2} className="form-input resize-none" value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} placeholder="Full address" />
+              <label className="form-label">Location</label>
+              <select className="form-input" value={form.location_id} onChange={e => setForm(f => ({ ...f, location_id: e.target.value }))}>
+                <option value="">— Select Location —</option>
+                {locations.map(l => <option key={l.location_id} value={l.location_id}>{l.city} - {l.address}</option>)}
+              </select>
             </div>
             <div className="flex gap-3 pt-2">
               <button onClick={() => setModal(null)} className="btn-secondary flex-1 justify-center">Cancel</button>
@@ -159,10 +164,10 @@ export default function Persons() {
                 {selected.phone_number && <p className="text-sm text-slate-500 font-mono">{selected.phone_number}</p>}
               </div>
             </div>
-            {selected.address && (
+            {selected.city && (
               <div className="bg-navy-900 rounded-lg p-3">
-                <p className="text-xs text-slate-500 uppercase tracking-wide mb-1">Address</p>
-                <p className="text-sm text-slate-300">{selected.address}</p>
+                <p className="text-xs text-slate-500 uppercase tracking-wide mb-1">Location</p>
+                <p className="text-sm text-slate-300">{selected.city} - {selected.location_address}</p>
               </div>
             )}
             {/* Crime involvement */}

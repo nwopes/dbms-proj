@@ -98,7 +98,9 @@ erDiagram
     CRIME ||--o{ CRIME_PERSON : "has"
     CRIME ||--o{ CASE_FILE : "generates"
     CRIME ||--o{ FIR : "recorded as"
-    FIR }o--|| PERSON : "filed by"
+    FIR }o--o| PERSON : "filed by civilian"
+    FIR }o--o| POLICE_OFFICER : "filed by officer"
+    LOCATION ||--o{ PERSON : "lives at"
     LOCATION ||--o{ CRIME : "occurs at"
     LOCATION ||--o{ POLICE_STATION : "houses"
     POLICE_STATION ||--o{ POLICE_OFFICER : "employs"
@@ -133,7 +135,7 @@ The core civic entity table tracking involved individuals (suspects, victims, wi
 | `age` | INT | NULL |
 | `gender` | VARCHAR(10) | NULL |
 | `phone_number` | VARCHAR(15) | NULL |
-| `address` | VARCHAR(255) | NULL |
+| `location_id` | INT | FK → Location |
 
 #### 3. `Police_Station`
 Represents the structural jurisdiction hubs allocating forces.
@@ -177,7 +179,6 @@ Investigation node opened for each authenticated crime, housing evidence and off
 |--------|------|-------------|
 | `case_id` | INT | PK, AUTO_INCREMENT |
 | `crime_id` | INT | FK → Crime |
-| `lead_officer_id` | INT | FK → Police_Officer |
 | `case_status` | VARCHAR(50) | NULL |
 | `start_date` | DATE | NULL |
 | `end_date` | DATE | NULL |
@@ -200,7 +201,8 @@ The initial verified complaint formalizing the crime reporting phase.
 |--------|------|-------------|
 | `fir_id` | INT | PK, AUTO_INCREMENT |
 | `crime_id` | INT | FK → Crime |
-| `filed_by` | INT | FK → Person |
+| `filed_by_person` | INT | FK → Person, NULL |
+| `filed_by_officer` | INT | FK → Police_Officer, NULL |
 | `filing_date` | DATE | NOT NULL |
 | `description` | TEXT | NULL |
 
@@ -211,6 +213,7 @@ Associates multiple investigatory officers into task-forces for single intensive
 |--------|------|-------------|
 | `case_id` | INT | PK, FK → Case_File |
 | `officer_id` | INT | PK, FK → Police_Officer |
+| `role` | VARCHAR(50) | 'Lead' / 'Investigator' |
 
 #### 10. `Crime_Person` *(Junction Table | M:N)*
 Associates Persons with Crimes allowing varied concurrent involvements.
@@ -219,7 +222,7 @@ Associates Persons with Crimes allowing varied concurrent involvements.
 |--------|------|-------------|
 | `crime_id` | INT | PK, FK → Crime |
 | `person_id` | INT | PK, FK → Person |
-| `role` | VARCHAR(20) | `Suspect` / `Victim` / `Witness` |
+| `role` | VARCHAR(20) | PK, `Suspect` / `Victim` / `Witness` |
 
 #### 11. `Evidence`
 Physical/Digital item tracker linking items collected to cases.
@@ -285,8 +288,9 @@ The structural integrity relies heavily on explicitly declared native constraint
     Uses a **cursor** to iterate over all open Case Files and return each case with its crime type and lead officer — demonstrating cursor-based row-level processing inside MySQL.
 *   **Stored Function: `GetCrimeCount(p_city)`**
     Operates as an isolated deterministic SQL math function enabling rapid analytics pulls per city.
-*   **18 Database Triggers**
-    Covering all DML operations (INSERT / UPDATE / DELETE) on `Crime`, `Case_File`, `FIR`, `Evidence`, `Court_Case`, and `Crime_Person`. Two special triggers (`after_court_verdict_insert`, `after_court_verdict_update`) automatically close the linked Case File when a final verdict (Guilty/Acquitted/Dismissed) is recorded.
+*   **24 Database Triggers**
+    Covering all DML operations (INSERT / UPDATE / DELETE) on `Crime`, `Case_File`, `FIR`, `Evidence`, `Court_Case`, and `Crime_Person` to log to `Audit_Log`. Two special triggers (`after_court_verdict_insert`, `after_court_verdict_update`) automatically close the linked Case File when a final verdict (Guilty/Acquitted/Dismissed) is recorded.
+    **Temporal Validation Triggers** (`before_case_insert`, `before_evidence_insert`, etc.) strictly enforce temporal logic in the database (e.g. Evidence cannot be collected before the crime date). An `after_case_update` trigger ensures that if a Case File is set to 'Closed', the underlying Crime is auto-closed as well.
 *   **4 Views**
     `vw_crime_summary`, `vw_case_details`, `vw_fir_details`, `vw_suspect_list` — pre-joined snapshots used by API queries to reduce round-trips.
 

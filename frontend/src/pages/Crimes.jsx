@@ -91,7 +91,6 @@ export default function Crimes() {
     }))
   }
 
-  // Sync Crime_Person records after saving the crime
   const syncPersons = async (crimeId) => {
     const validNew = formPersons.filter(p => p.person_id)
 
@@ -100,26 +99,18 @@ export default function Crimes() {
         try { await api.post('/crime-persons', { crime_id: crimeId, person_id: p.person_id, role: p.role }) } catch { /* ignore dup */ }
       }
     } else {
-      const origIds = origPersons.map(p => p.person_id)
-      const newIds = validNew.map(p => p.person_id)
-
-      // Remove persons no longer in the list
+      // Remove roles no longer in the list
       for (const orig of origPersons) {
-        if (!newIds.includes(orig.person_id)) {
-          try { await api.delete('/crime-persons', { data: { crime_id: crimeId, person_id: orig.person_id } }) } catch { /* ignore */ }
+        const stillExists = validNew.some(p => p.person_id === orig.person_id && p.role === orig.role)
+        if (!stillExists) {
+          try { await api.delete('/crime-persons', { data: { crime_id: crimeId, person_id: orig.person_id, role: orig.role } }) } catch { /* ignore */ }
         }
       }
-      // Add newly linked persons
+      // Add newly linked roles
       for (const np of validNew) {
-        if (!origIds.includes(np.person_id)) {
+        const existed = origPersons.some(p => p.person_id === np.person_id && p.role === np.role)
+        if (!existed) {
           try { await api.post('/crime-persons', { crime_id: crimeId, person_id: np.person_id, role: np.role }) } catch { /* ignore */ }
-        }
-      }
-      // Update roles that changed
-      for (const np of validNew) {
-        const orig = origPersons.find(p => p.person_id === np.person_id)
-        if (orig && orig.role !== np.role) {
-          try { await api.put('/crime-persons', { crime_id: crimeId, person_id: np.person_id, role: np.role }) } catch { /* ignore */ }
         }
       }
     }
@@ -128,10 +119,10 @@ export default function Crimes() {
   const handleSave = async () => {
     if (!form.crime_type || !form.date) return toast.error('Crime type and date are required')
 
-    // Validate no duplicate persons
+    // Validate no duplicate (person, role) pairs
     const validPersons = formPersons.filter(p => p.person_id)
-    const uniqueIds = new Set(validPersons.map(p => p.person_id))
-    if (uniqueIds.size !== validPersons.length) return toast.error('A person cannot be added twice to the same crime')
+    const uniquePairs = new Set(validPersons.map(p => `${p.person_id}-${p.role}`))
+    if (uniquePairs.size !== validPersons.length) return toast.error('A person cannot have the same role twice in the same crime')
 
     try {
       let crimeId

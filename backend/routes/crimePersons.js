@@ -33,8 +33,8 @@ router.put('/', async (req, res) => {
 
 router.delete('/', async (req, res) => {
   try {
-    const { crime_id, person_id } = req.body;
-    await pool.query('DELETE FROM Crime_Person WHERE crime_id=? AND person_id=?', [crime_id, person_id]);
+    const { crime_id, person_id, role } = req.body;
+    await pool.query('DELETE FROM Crime_Person WHERE crime_id=? AND person_id=? AND role=?', [crime_id, person_id, role]);
     res.json({ message: 'Deleted' });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
