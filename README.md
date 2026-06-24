@@ -38,7 +38,7 @@ The system securely manages over 13 interrelated relational entities, all strict
 | Name | Roll Number | Contributions |
 |------|-------------|------|
 | **Akshat Bansal** | 2410110039 | **Project Lead & Full Stack:** Architecture, MERN setup, Dashboard analytics, API coordination. |
-| **Ishanvi Singh** | 2410110150 | **DB Design & SQL:** ER Diagram, DDL Schema (3NF/BCNF), constraints, and documentation. |
+| **Ishanvi Singh** | 2410110150 | **Database Engineering:** 3NF schema design, 24 triggers & stored procedures, ACID-compliant transactions, referential integrity across 11 tables. |
 | **Anant Joshi** | 2410110049 | **Advanced DB & Routes:** SQL routines (Procedures, Triggers, Views) and backend CRUD APIs. |
 | **Arpit Goel** | 2410110075 | **Frontend UI & Novelties:** CRUD Pages, PDF Reports, Evidence Uploads, and Audit Logging. |
 | **Manasvi Sharma** | 2410110195 | **Data & QA:** DML statements, sample seed generation, transaction testing, and Report Author. |
